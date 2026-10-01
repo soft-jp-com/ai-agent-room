@@ -47,7 +47,7 @@ var webFS embed.FS
 func main() {
 	port := flag.Int("port", 8787, "待ち受けポート（127.0.0.1 のみ）")
 	workdir := flag.String("workdir", "", "エージェントの作業ディレクトリ（既定: 前回の作業ディレクトリ、なければカレントディレクトリ）")
-	maxHops := flag.Int("max-hops", 10, "人間の発言1回あたりのエージェントの最大ターン数")
+	maxHops := flag.Int("max-hops", 100, "人間の発言1回あたりのエージェントの最大ターン数")
 	delaySec := flag.Int("delay", 3, "エージェントの発言後、次のエージェントを起動するまでの待ち秒数")
 	noOpen := flag.Bool("no-open", false, "起動時にブラウザを開かない")
 	flag.Parse()

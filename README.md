@@ -73,7 +73,7 @@ Set the Edge executable with `AI_AGENT_ROOM_EDGE` and the screenshot folder with
 |---|---|---|
 | `-workdir` | Previous working directory (or the current directory) | Working directory of the agents |
 | `-port` | 8787 | Port to listen on (127.0.0.1 only) |
-| `-max-hops` | 10 | In chat, the maximum number of automatic agent messages per human message (also changeable on screen) |
+| `-max-hops` | 100 | In chat, the maximum number of automatic agent messages per human message (also changeable on screen) |
 | `-delay` | 3 | Seconds to wait after an agent finishes before starting the next agent (also changeable on screen) |
 | `-no-open` | false | Do not open the browser on start |
 
