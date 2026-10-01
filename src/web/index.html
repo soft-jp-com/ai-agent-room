@@ -242,7 +242,7 @@
     <label title="進行役は作業を割り振り、人間の依頼の範囲内で進めるかどうかを判断する。変更は次の発言から反映">進行役 <select id="leader"></select></label>
     <label title="画面の配色。別窓（CLI 出力）にも反映する">テーマ <select id="theme"><option value="system">OS に合わせる</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
     <label id="roundsLabel" title="全員が1回ずつ発言して1周" hidden>周回 <input id="rounds" type="number" min="1" max="20" value="3"></label>
-    <label title="画面の表示言語（エージェントへの指示やチャットの本文は変わらない）">言語 <select id="lang"></select></label>
+    <label title="画面の表示言語と、起動時・新しい会話の開始時に投稿する環境とルールの言語（それ以外のエージェントへの指示やチャットの本文は変わらない）">言語 <select id="lang"></select></label>
     <label title="このタブが見えていないとき、エージェントの発言・エラー・あなたへの依頼の増加をブラウザの通知で知らせる。本文や作業フォルダは通知に含めない。オンにしたときだけブラウザの許可を求める"><input type="checkbox" id="notify"> 背面にあるとき通知する</label>
     <label title="チャットのコードブロック（powershell・cmd・bash など）に付ける［実行］ボタンを、進行役以外の発言にも出す。進行役以外のコマンドは、実行の前に確認する。変更は次に表示する発言から反映">コマンドの実行 <select id="cmdAll"><option value="all">すべての発言に出す</option><option value="leader">進行役の発言だけ</option></select></label>
     <div class="wd"><label title="エージェントが作業するディレクトリ。変更すると新しい会話を始める。サーバを再起動しても引き継ぐ">作業ディレクトリ: <input id="workdirInput" size="60" spellcheck="false"></label> <button id="workdirApply">変更</button></div>
@@ -734,9 +734,13 @@ function saveSetting(key, value) {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(saved)); } catch (e) { console.warn('settings.save', e); }
 }
 
+let langSent = false; // サーバに言語の設定がないとき、このブラウザの言語を送ったか
 function renderStatus(s) {
   status = s;
   agents = s.agents;
+  // 言語はサーバの設定に合わせる（ほかのブラウザで変えた場合も）。サーバに設定がなければ、このブラウザで選んでいた言語を送る
+  if (s.lang && s.lang !== lang) { applyLang(s.lang); return; } // つなぎ直して、届いた状態で描き直す
+  if (!s.lang && lang !== 'ja' && !langSent) { langSent = true; api('PUT', '/api/settings', { lang }); }
   (s.commands || []).forEach(applyCmdState); // つなぎ直したときも、実行中・実行済みの状態を戻す
   for (const el of document.querySelectorAll('#list .cmd input.cwd')) el.placeholder = s.workdir; // 空欄なら作業ディレクトリで実行
   $('#workdir').textContent = t('作業ディレクトリ: {0}', s.workdir);
@@ -931,8 +935,9 @@ function notifyMessage(m) {
 }
 
 // ---- イベント受信 ----
+let es = null;
 function connect() {
-  const es = new EventSource('/api/events');
+  es = new EventSource('/api/events');
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
     // 接続のたびに snapshot の直後に状態が届く
@@ -1055,11 +1060,23 @@ syncRounds(); // 保存した設定やブラウザが復元した選択に合わ
 const translateStatic = () => ['header', '#settings', 'footer', '#inbox', '#inboxPanel', '#viewbar'].forEach((s) => translateDom($(s)));
 $('#lang').innerHTML = I18N_LANGS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
 $('#lang').value = lang;
-$('#lang').onchange = (e) => {
-  setLang(e.target.value);
+// applyLang は表示言語を切り替えて、画面を訳し直す。
+// 発言（［実行］の欄など）も訳し直すため、つなぎ直して snapshot と状態を受け取り直す（チップは届いた状態で作り直す）
+function applyLang(l) {
+  setLang(l);
+  $('#lang').value = lang;
   translateStatic();
-  if (status.agents) { for (const c of [...$('#agents').children]) c.remove(); renderStatus(status); } // チップは作り直して訳す
+  for (const c of [...$('#agents').children]) c.remove();
   loadModels(); // モデル選択の「既定」「一時停止」を訳し直す
+  if (es) { es.close(); connect(); }
+}
+// 言語はサーバに保存する（起動時と新しい会話の開始時に投稿する、環境とルールの言語になる）。
+// 先にサーバを変えてから切り替える（先に切り替えると、つなぎ直しで届く古い言語の状態で戻ってしまう）。
+// サーバが配る状態を受け取ると renderStatus が切り替えるので、まだ切り替わっていなければここで切り替える
+$('#lang').onchange = async (e) => {
+  const l = e.target.value;
+  await api('PUT', '/api/settings', { lang: l });
+  if (lang !== l) applyLang(l);
 };
 translateStatic();
 $('#stop').onclick = () => api('POST', '/api/stop');

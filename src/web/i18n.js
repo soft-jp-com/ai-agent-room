@@ -1,6 +1,7 @@
 // 画面の多言語化（案 14）。対象は画面の文言だけで、エージェントに渡す指示文・チャットの本文・サーバが返すメッセージは訳さない。
 // 日本語の文言をそのままキーにして、英語の訳を引く。訳がない文言は日本語のまま出す。
 // 言語は設定（Webストレージ ai_agent_room.settings の lang）に保存し、両方の画面（チャット・別窓）で共有する。
+// サーバにも保存し（起動時の環境とルールの投稿の言語）、チャット画面は status の lang に合わせる（index.html の renderStatus）。
 const I18N_EN = {
   // ---- チャット画面（固定の文言） ----
   '設定': 'Settings',
@@ -49,7 +50,7 @@ const I18N_EN = {
   '追加': 'Add',
   '追加・削除は会話が進んでいないときだけできる。既定の3つは削除できない。': 'Agents can be added or removed only while no conversation is running. The three default agents cannot be removed.',
   '変更はすぐに反映され、ブラウザに保存される（作業ディレクトリは「変更」で反映し、サーバーに保存される）。':
-    'Changes apply immediately. The interval, limit, session rotation and leader are saved on the server; mode, rounds, language and theme are saved in this browser. The working directory applies with "Change".',
+    'Changes apply immediately. The interval, limit, session rotation, leader and language are saved on the server; mode, rounds and theme are saved in this browser. The working directory applies with "Change".',
   '閉じる': 'Close',
   '設定フォルダを開く': 'Open config folder',
   'ルール（rules.md）やエージェントのできること（capabilities.json）を置くフォルダをエクスプローラーで開く。エージェントはこのフォルダを読み書きできない':
@@ -67,7 +68,7 @@ const I18N_EN = {
   'ライト': 'Light',
   'ダーク': 'Dark',
   '言語': 'Language',
-  '画面の表示言語（エージェントへの指示やチャットの本文は変わらない）': 'Display language of this screen (instructions to agents and chat messages are not translated)',
+  '画面の表示言語と、起動時・新しい会話の開始時に投稿する環境とルールの言語（それ以外のエージェントへの指示やチャットの本文は変わらない）': 'Display language of this screen, and the language of the environment and rules posted at startup and when a new chat starts (other instructions to agents and chat messages are not translated)',
 
   // ---- チャット画面（スクリプトで出す文言） ----
   'あなた': 'You',

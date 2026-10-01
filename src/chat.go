@@ -167,6 +167,8 @@ type Event struct {
 	CommandLeaderOnly bool `json:"command_leader_only"`
 	// OS は AI Agent Room が動いている OS（runtime.GOOS）。Windows 以外では cmd・bat のブロックを実行できない
 	OS string `json:"os"`
+	// Lang は言語の設定（"ja" / "en"。未設定なら空）。画面はこれに合わせて表示言語を切り替える
+	Lang string `json:"lang"`
 }
 
 type Room struct {
@@ -202,7 +204,8 @@ type Room struct {
 	commands          map[string]*CommandRun // コードブロックの実行状態（キーは "発言ID:ブロック番号"）。今の会話で実行したものすべて
 	cmdRunning        map[string]*CommandRun // 実行中のコマンド（commandKey → 実行。同時に commandMaxRunning 件まで）
 	commandLeaderOnly bool                   // 進行役（と人間）の発言のブロックだけを実行できる
-	envProfile        string                 // 起動時に調べた環境（新しい会話の先頭に載せる。空なら載せない）
+	envProfile        *envInfo               // 起動時に調べた環境（新しい会話の先頭に載せる。nil なら載せない）
+	lang              string                 // 言語の設定（"ja" / "en"。空は未設定で日本語）。環境とルールの投稿の文面に使う
 	configDir         string                 // 人間が編集する設定のフォルダ（rules.md・capabilities.json。%LOCALAPPDATA%\ai-agent-room\config）
 	legacyConfigDir   string                 // 設定ファイルの旧い置き場所（実行ファイルのフォルダ）。configDir になければ読む
 	leases            map[string]*Lease      // 共有物の貸し出し（キーは名前）。「新しい会話」でも保持する
@@ -309,7 +312,7 @@ func (r *Room) statusLocked() Event {
 		Hops: r.hops, MaxHops: r.maxHops, DelaySec: int(r.delay / time.Second), Leader: r.leader,
 		Waiting: r.waiting, Workdir: r.workdir, LogFile: filepath.Base(r.logFile), RotateTokens: r.rotateTokens,
 		TurnTimeoutSec: int(r.turnTimeout / time.Second),
-		Commands:       r.commandsLocked(), CommandLeaderOnly: r.commandLeaderOnly, Leases: r.leasesLocked(), OS: runtime.GOOS}
+		Commands:       r.commandsLocked(), CommandLeaderOnly: r.commandLeaderOnly, Leases: r.leasesLocked(), OS: runtime.GOOS, Lang: r.lang}
 	if r.disc != nil {
 		d := *r.disc
 		ev.Discussion = &d

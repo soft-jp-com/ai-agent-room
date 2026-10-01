@@ -82,6 +82,7 @@ macOS・Linux への試験的な対応（2026-10-01 人間の依頼。ビルド�
 名前は AI Agent Room（2026-10-01 人間の決定。旧名 AI Chat）。実行ファイルは `ai-agent-room.exe`、設定フォルダは `%LOCALAPPDATA%\ai-agent-room`（macOS・Linux は OS の設定フォルダの下の `ai-agent-room`）、環境変数は `AI_AGENT_ROOM_*`、Web ストレージのキーは `ai_agent_room.*`、MCP サーバ名は `ai_agent_room`。旧名からの引き継ぎとして、起動時に新しい設定フォルダがなく旧いフォルダ（`ai_chat`）があればフォルダごと移し（ログ `config.migrate`。`AI_AGENT_ROOM_CONFIG_DIR` を指定しているときは移さない）、画面は旧いキー（`ai_chat.settings`・`ai_chat.human`）の値を新しいキーに写して旧いキーを消す（`theme.js`）。旧い環境変数（`AI_CHAT_*`）は読まない。
 
 「上限」（人間の発言1回あたりのエージェントの発言数。`max_hops`・`-max-hops`）の既定値は 100。0 を指定すると無制限で、上限による停止をしない（2026-10-01 人間の決定。`chat.go` の `hopLimitReached`）。負の値は 1 にする。
+言語の設定（2026-10-02 人間の依頼。`settings.go` の `SetLang`、`envprofile.go`、`PUT /api/settings` の `lang`）。設定ダイアログの「言語」は画面の表示言語に加えて、起動時と新しい会話の開始時に投稿する「環境とこの会話でのルール」の言語も決める。英語なら見出し・環境・エージェントのできること・既定のルールを英語で投稿する（ルールは設定フォルダの `rules.en.md` を優先し、なければ `rules.md`、どちらもなければ既定の英語のルール。人間が書いた `rules.md` は言語の設定で無視しない）。設定はサーバの設定ファイルに保存し、status の `lang` で画面に伝える（画面はこれに合わせて表示言語を切り替える。サーバに設定がなければ、そのブラウザで選んでいた言語を送る）。変えても今の会話の投稿は書き直さず、次の投稿から反映する。それ以外のエージェントへの指示とシステムメッセージは日本語のまま。
 
 ## 2. 設計方針
 
@@ -400,3 +401,4 @@ sequenceDiagram
 | 2026-10-01 | 人間（@claude が実装・反映） | 名前を AI Chat から AI Agent Room に変更し、旧名の設定フォルダと Web ストレージの値を引き継ぐことを第1章に追記。実装（`auth.go`・`main.go`・`protect.go`・`web/theme.js` ほか、名前を含む全ファイル） |
 | 2026-10-01 | 人間（@claude が実装・反映） | 上限（`-max-hops`）の既定値を 10 から 100 に変更（`main.go`） |
 | 2026-10-01 | 人間（@claude が実装・反映） | 上限（`max_hops`）に 0（無制限）を指定できるようにし、100 までの制限をなくした。負の値は 1 にする。無制限のときは上限で止まらず、フリートークの帯は「上限なし」と出す（`chat.go`・`freetalk.go`・`web/index.html`・`web/i18n.js`） |
+| 2026-10-02 | 人間（@claude が実装・反映） | 第1章に言語の設定を追記。英語なら起動時と新しい会話の開始時の「環境とこの会話でのルール」を英語で投稿し、言語の設定をサーバに保存する（`envprofile.go`・`settings.go`・`main.go`・`chat.go`・`web/index.html`・`web/i18n.js`） |

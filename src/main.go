@@ -9,7 +9,7 @@ package main
 //   POST /api/freetalk     {"topic": "..."} フリートーク開始（topic は省略可）
 //   POST /api/stop         実行中のターン・待機・ディスカッションを中止
 //   POST /api/reset        履歴と各エージェントのセッションを破棄
-//   PUT  /api/settings     {"max_hops": 10, "delay_sec": 3, "leader": "claude", "rotate_tokens": 500000}（leader は空文字で指定なし。rotate_tokens は 0 で切り替えなし）
+//   PUT  /api/settings     {"max_hops": 10, "delay_sec": 3, "leader": "claude", "rotate_tokens": 500000, "lang": "en"}（leader は空文字で指定なし。rotate_tokens は 0 で切り替えなし。lang は ja / en）
 //   GET  /api/models       エージェントごとの選べるモデル
 //   PUT  /api/agents/{id}  {"model": "opus"} エージェントのモデルを変更（空文字で既定に戻す）
 //   GET  /api/logs         過去のチャットログ一覧
@@ -489,6 +489,8 @@ func (room *Room) handleSettings(w http.ResponseWriter, r *http.Request) {
 		CommandLeaderOnly *bool `json:"command_leader_only"`
 		// TurnTimeoutSec は1ターンの上限時間（秒。案 8.3）
 		TurnTimeoutSec *int `json:"turn_timeout_sec"`
+		// Lang は言語の設定（"ja" / "en"）。環境とルールの投稿は次の投稿（起動時・新しい会話の開始時）から変わる
+		Lang *string `json:"lang"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
 		writeError(w, r, http.StatusBadRequest, "INVALID_JSON", "JSONを解析できません")
@@ -502,6 +504,10 @@ func (room *Room) handleSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusBadRequest, "INVALID_WORKDIR", err.Error())
 			return
 		}
+	}
+	if body.Lang != nil && *body.Lang != langJa && *body.Lang != langEn {
+		writeError(w, r, http.StatusBadRequest, "INVALID_LANG", ErrInvalidLang.Error())
+		return
 	}
 	if body.Leader != nil {
 		err := room.SetLeader(*body.Leader)
@@ -534,6 +540,9 @@ func (room *Room) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.TurnTimeoutSec != nil {
 		room.SetTurnTimeout(*body.TurnTimeoutSec)
+	}
+	if body.Lang != nil {
+		room.SetLang(*body.Lang) // 値は上で確かめた
 	}
 	room.SaveSettings()
 	writeData(w, http.StatusOK, nil)

@@ -21,13 +21,16 @@ func TestSettingsSaveAndLoad(t *testing.T) {
 	if err := r.SetLeader("x"); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.SetLang(langEn); err != nil {
+		t.Fatal(err)
+	}
 	r.SaveSettings()
 
 	// 再起動した想定：保存した設定が戻る
 	r2 := newRoom()
 	r2.LoadSettings(nil)
-	if r2.maxHops != 50 || r2.delay != 9*time.Second || r2.rotateTokens != 300000 || r2.leader != "x" {
-		t.Fatalf("maxHops=%d delay=%v rotate=%d leader=%q", r2.maxHops, r2.delay, r2.rotateTokens, r2.leader)
+	if r2.maxHops != 50 || r2.delay != 9*time.Second || r2.rotateTokens != 300000 || r2.leader != "x" || r2.lang != langEn {
+		t.Fatalf("maxHops=%d delay=%v rotate=%d leader=%q lang=%q", r2.maxHops, r2.delay, r2.rotateTokens, r2.leader, r2.lang)
 	}
 
 	// コマンドラインで指定した項目は、保存した値で上書きしない

@@ -8,6 +8,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,6 +29,8 @@ type roomSettings struct {
 	AgentModel map[string]string `json:"agent_model,omitempty"`
 	// AgentPermission は人間が選んだ権限の段階（エージェント ID ごと。既定は入れない）（案8）
 	AgentPermission map[string]string `json:"agent_permission,omitempty"`
+	// Lang は言語の設定（"ja" / "en"）。起動時の環境とルールの投稿に使うので、画面だけでなくサーバにも保存する
+	Lang *string `json:"lang,omitempty"`
 }
 
 func (r *Room) settingsPath() string {
@@ -53,6 +56,11 @@ func (r *Room) SaveSettings() {
 	r.mu.Lock()
 	maxHops, delay, rotate, leader, leaderOnly := r.maxHops, int(r.delay/time.Second), r.rotateTokens, r.leader, r.commandLeaderOnly
 	timeout := int(r.turnTimeout / time.Second)
+	var lang *string
+	if r.lang != "" {
+		l := r.lang
+		lang = &l
+	}
 	var agentTimeout map[string]int
 	var agentModel map[string]string
 	var agentPerm map[string]string
@@ -78,7 +86,7 @@ func (r *Room) SaveSettings() {
 	}
 	r.mu.Unlock()
 	b, _ := json.MarshalIndent(roomSettings{MaxHops: &maxHops, DelaySec: &delay, RotateTokens: &rotate, Leader: &leader, CommandLeaderOnly: &leaderOnly,
-		TurnTimeoutSec: &timeout, AgentTimeoutSec: agentTimeout, AgentModel: agentModel, AgentPermission: agentPerm}, "", "  ")
+		TurnTimeoutSec: &timeout, AgentTimeoutSec: agentTimeout, AgentModel: agentModel, AgentPermission: agentPerm, Lang: lang}, "", "  ")
 	path := r.settingsPath()
 	os.MkdirAll(filepath.Dir(path), 0o700)
 	if err := writeStateFile(path, b); err != nil {
@@ -139,6 +147,11 @@ func (r *Room) LoadSettings(skip map[string]bool) {
 	for id, level := range s.AgentPermission {
 		r.restoreAgentPermission(id, level)
 	}
+	if s.Lang != nil {
+		if err := r.SetLang(*s.Lang); err != nil {
+			r.log.Warn("settings.load.lang", "lang", *s.Lang, "error", err.Error())
+		}
+	}
 	if migrate {
 		r.SaveSettings()
 		if _, err := os.Stat(path); err == nil {
@@ -155,6 +168,39 @@ func (r *Room) SetCommandLeaderOnly(on bool) {
 	defer r.mu.Unlock()
 	r.commandLeaderOnly = on
 	r.pushStatusLocked()
+}
+
+// 言語の設定の値
+const (
+	langJa = "ja"
+	langEn = "en"
+)
+
+// ErrInvalidLang は対応していない言語を指定したとき
+var ErrInvalidLang = errors.New("対応していない言語です（ja / en）")
+
+// SetLang は言語の設定を変える。環境とルールの投稿は、次に投稿するとき（起動時・新しい会話の開始時）からこの言語になる。
+// 今の会話の投稿は書き直さない（エージェントはすでに読んでいる）
+func (r *Room) SetLang(lang string) error {
+	if lang != langJa && lang != langEn {
+		return ErrInvalidLang
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.lang != lang {
+		r.log.Info("settings.lang.set", "lang", lang)
+	}
+	r.lang = lang
+	r.pushStatusLocked()
+	return nil
+}
+
+// langLocked は投稿の文面に使う言語（未設定なら日本語）
+func (r *Room) langLocked() string {
+	if r.lang == langEn {
+		return langEn
+	}
+	return langJa
 }
 
 // restoreAgentModel は保存した人間のモデル選択を戻す（案2）。消えたエージェントや、候補にないモデルは戻さずにログを出す。
