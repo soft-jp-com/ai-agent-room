@@ -235,7 +235,7 @@
   <h2>設定</h2>
   <div class="settings">
     <label title="エージェントが話し終わってから次のエージェントを起動するまでの待ち時間">間隔 <input id="delay" type="number" min="0" max="300">秒</label>
-    <label title="チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数">上限 <input id="maxHops" type="number" min="1" max="100"></label>
+    <label title="チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数。0 で無制限">上限 <input id="maxHops" type="number" min="0"></label>
     <label title="人間が送信したとき、直近1回の実行の入力（キャッシュ分を含む）がこの値を超えたエージェントは、議事録を作って CLI セッションを切り替える。0 で切り替えない">セッション切替 <input id="rotateTokens" type="number" min="0" max="100000000" step="10000">トークン</label>
     <label title="1ターン（CLI の1回の起動）の上限時間。これを過ぎると中止して AGENT_TIMEOUT を出す。エージェントごとに変える場合は下の一覧で指定する">応答の上限 <input id="turnTimeout" type="number" min="1" max="60">分</label>
     <label title="会話が進んでいないときに「送信」で始める進め方。フリートーク: 全員が新しい発言を見て話したいときに発言し続ける。順番に発言: 決まった順番で指定周回数だけ議論する。チャット: 宛先（なければ全員）が返事をする。返事の中で別のAIが @ID で呼ばれると、呼ばれたAIが続けて発言する（上限まで）">進め方 <select id="talkMode"><option value="freetalk">フリートーク</option><option value="discuss">順番に発言</option><option value="chat">チャット</option></select></label>
@@ -813,7 +813,9 @@ function renderStatus(s) {
     $('#topic').title = d.topic;
   } else if (f) {
     $('#mode').textContent = t('フリートーク中');
-    $('#round').textContent = t('AIの発言 {0} / {1}（人間が発言するとリセット）', s.hops, s.max_hops);
+    $('#round').textContent = s.max_hops === 0
+      ? t('AIの発言 {0}（上限なし。人間が発言するとリセット）', s.hops)
+      : t('AIの発言 {0} / {1}（人間が発言するとリセット）', s.hops, s.max_hops);
     $('#topic').textContent = f.topic ? t('お題: {0}', f.topic) : '';
     $('#topic').title = f.topic || '';
   }
@@ -1063,7 +1065,8 @@ translateStatic();
 $('#stop').onclick = () => api('POST', '/api/stop');
 $('#summarize').onclick = () => { if (confirm(t('会話を要約してから、履歴と各エージェントのセッションを破棄して新しい会話を始めますか？（元のログは残ります）'))) api('POST', '/api/summarize'); };
 $('#reset').onclick = () => { if (confirm(t('履歴と各エージェントのセッションを破棄して、新しい会話を始めますか？'))) api('POST', '/api/reset'); };
-$('#maxHops').onchange = (e) => { api('PUT', '/api/settings', { max_hops: Number(e.target.value) }); };
+// 空欄は 0（無制限）にならないよう送らない
+$('#maxHops').onchange = (e) => { if (e.target.value !== '') api('PUT', '/api/settings', { max_hops: Number(e.target.value) }); };
 $('#delay').onchange = (e) => { api('PUT', '/api/settings', { delay_sec: Number(e.target.value) }); };
 $('#rotateTokens').onchange = (e) => { api('PUT', '/api/settings', { rotate_tokens: Number(e.target.value) }); };
 $('#turnTimeout').onchange = (e) => { api('PUT', '/api/settings', { turn_timeout_sec: Number(e.target.value) * 60 }); };

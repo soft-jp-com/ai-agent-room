@@ -81,6 +81,8 @@ macOS・Linux への試験的な対応（2026-10-01 人間の依頼。ビルド�
 
 名前は AI Agent Room（2026-10-01 人間の決定。旧名 AI Chat）。実行ファイルは `ai-agent-room.exe`、設定フォルダは `%LOCALAPPDATA%\ai-agent-room`（macOS・Linux は OS の設定フォルダの下の `ai-agent-room`）、環境変数は `AI_AGENT_ROOM_*`、Web ストレージのキーは `ai_agent_room.*`、MCP サーバ名は `ai_agent_room`。旧名からの引き継ぎとして、起動時に新しい設定フォルダがなく旧いフォルダ（`ai_chat`）があればフォルダごと移し（ログ `config.migrate`。`AI_AGENT_ROOM_CONFIG_DIR` を指定しているときは移さない）、画面は旧いキー（`ai_chat.settings`・`ai_chat.human`）の値を新しいキーに写して旧いキーを消す（`theme.js`）。旧い環境変数（`AI_CHAT_*`）は読まない。
 
+「上限」（人間の発言1回あたりのエージェントの発言数。`max_hops`・`-max-hops`）の既定値は 100。0 を指定すると無制限で、上限による停止をしない（2026-10-01 人間の決定。`chat.go` の `hopLimitReached`）。負の値は 1 にする。
+
 ## 2. 設計方針
 
 | 項目 | 方針 |
@@ -397,3 +399,4 @@ sequenceDiagram
 | 2026-10-01 | 人間（@claude3 が実装・反映） | 利用枠の10分ごとの定期取得をやめた（起動時・ジョブ終了時・再開時・追加時だけ取得）。実装（`quota.go`・`main.go`） |
 | 2026-10-01 | 人間（@claude が実装・反映） | 名前を AI Chat から AI Agent Room に変更し、旧名の設定フォルダと Web ストレージの値を引き継ぐことを第1章に追記。実装（`auth.go`・`main.go`・`protect.go`・`web/theme.js` ほか、名前を含む全ファイル） |
 | 2026-10-01 | 人間（@claude が実装・反映） | 上限（`-max-hops`）の既定値を 10 から 100 に変更（`main.go`） |
+| 2026-10-01 | 人間（@claude が実装・反映） | 上限（`max_hops`）に 0（無制限）を指定できるようにし、100 までの制限をなくした。負の値は 1 にする。無制限のときは上限で止まらず、フリートークの帯は「上限なし」と出す（`chat.go`・`freetalk.go`・`web/index.html`・`web/i18n.js`） |

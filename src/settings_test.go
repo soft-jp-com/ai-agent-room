@@ -95,3 +95,20 @@ func TestSettingsAgentModelInvalid(t *testing.T) {
 		t.Fatalf("maxHops=%d sel=%q human=%q", r.maxHops, a.modelSel, a.humanModel)
 	}
 }
+
+// 上限は 0 で無制限。100 を超える値も設定でき、負の値は 1 にする
+func TestMaxHopsUnlimited(t *testing.T) {
+	r := NewRoom([]*Agent{{ID: "x", Name: "X", Adapter: fakeAdapter{}}}, t.TempDir(), t.TempDir(), 100, time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, c := range []struct{ in, want int }{{0, 0}, {500, 500}, {-5, 1}, {100, 100}} {
+		r.SetMaxHops(c.in)
+		if r.maxHops != c.want {
+			t.Fatalf("SetMaxHops(%d) → %d（期待 %d）", c.in, r.maxHops, c.want)
+		}
+	}
+	if hopLimitReached(1000, 0) {
+		t.Fatal("上限 0（無制限）で止まった")
+	}
+	if !hopLimitReached(10, 10) || hopLimitReached(9, 10) {
+		t.Fatal("上限の判定が違う")
+	}
+}

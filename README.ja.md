@@ -71,7 +71,7 @@ Edge の実行ファイルは `AI_AGENT_ROOM_EDGE`、スクリーンショット
 |---|---|---|
 | `-workdir` | 前回の作業ディレクトリ（なければカレントディレクトリ） | エージェントの作業ディレクトリ |
 | `-port` | 8787 | 待ち受けポート（127.0.0.1 のみ） |
-| `-max-hops` | 100 | チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数（画面からも変更可） |
+| `-max-hops` | 100 | チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数。0 で無制限（画面からも変更可） |
 | `-delay` | 3 | エージェントが話し終わってから次のエージェントを起動するまでの待ち秒数（画面からも変更可） |
 | `-no-open` | false | 起動時にブラウザを開かない |
 
@@ -115,7 +115,7 @@ Edge の実行ファイルは `AI_AGENT_ROOM_EDGE`、スクリーンショット
    - 3人は独立して動くので、答えの速いエージェントが先に発言し、それを見た他のエージェントが反応する
    - 見送り（パス）は表示しない。全員が見送ると会話は自然に止まり、次の発言を待つ
 3. 人間はいつでも発言できる。発言はそのまま全員に届く
-4. エージェントの発言は、人間の発言1回あたり「上限」の回数まで。上限に達すると止まり、人間が発言すると再開する。
+4. エージェントの発言は、人間の発言1回あたり「上限」の回数まで（0 なら無制限）。上限に達すると止まり、人間が発言すると再開する。
    上限に達した時点で考え中だったエージェントはそのまま発言するため、上限を少し超えることがある
 5. 「停止」で終了する。3回続けて失敗したエージェントはフリートークから外れる
 
@@ -222,7 +222,7 @@ sequenceDiagram
 | POST | `/api/agents` | `{"type": "claude"}` 同じ種類のエージェントを追加（`claude2` など） |
 | DELETE | `/api/agents/{id}` | 追加したエージェントを削除（既定の3つは不可） |
 | GET | `/api/agents/{id}/live` | エージェントの CLI 出力（SSE。直近1000行を送ってから新しい行を流す） |
-| PUT | `/api/settings` | `{"max_hops": 10, "delay_sec": 3, "leader": "claude", "workdir": "C:\\work", "rotate_tokens": 500000, "command_leader_only": true, "turn_timeout_sec": 1800}`（各項目は省略可。`rotate_tokens` はセッションを切り替えるしきい値で、0 なら切り替えない。`leader` は空文字で進行役なし。`workdir` を変えると新しい会話になり、存在しないディレクトリなら 400 `INVALID_WORKDIR`。`command_leader_only` が true なら、進行役と人間の発言のコードブロックだけを実行できる。`turn_timeout_sec` は1ターンの上限時間） |
+| PUT | `/api/settings` | `{"max_hops": 10, "delay_sec": 3, "leader": "claude", "workdir": "C:\\work", "rotate_tokens": 500000, "command_leader_only": true, "turn_timeout_sec": 1800}`（各項目は省略可。`max_hops` は 0 で無制限。`rotate_tokens` はセッションを切り替えるしきい値で、0 なら切り替えない。`leader` は空文字で進行役なし。`workdir` を変えると新しい会話になり、存在しないディレクトリなら 400 `INVALID_WORKDIR`。`command_leader_only` が true なら、進行役と人間の発言のコードブロックだけを実行できる。`turn_timeout_sec` は1ターンの上限時間） |
 | GET | `/api/models` | エージェントごとの選べるモデル `{"claude": [{"id", "label"}], ...}` |
 | PUT | `/api/agents/{id}` | `{"model": "opus", "paused": false, "timeout_sec": 600, "permission": "read_only"}` エージェントの設定を変更（各項目は省略可。`model` は `""` で既定に戻す。`timeout_sec` は 0 で会話全体の設定に戻す。`permission` は `""`（既定）・`read_only`・`workspace_write`） |
 | POST | `/api/agents/{id}/retry` | 失敗したターンを同じ新着でもう一度実行する |

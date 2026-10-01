@@ -16,7 +16,7 @@ const I18N_EN = {
   '秒': 'sec',
   'エージェントが話し終わってから次のエージェントを起動するまでの待ち時間': 'Wait time after an agent finishes before starting the next agent',
   '上限': 'Limit',
-  'チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数': 'Maximum number of agent messages per human message',
+  'チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数。0 で無制限': 'Maximum number of agent messages per human message. 0 means unlimited',
   'セッション切替': 'Session rotation',
   'トークン': 'tokens',
   '人間が送信したとき、直近1回の実行の入力（キャッシュ分を含む）がこの値を超えたエージェントは、議事録を作って CLI セッションを切り替える。0 で切り替えない':
@@ -99,6 +99,7 @@ const I18N_EN = {
   'お題: {0}': 'Topic: {0}',
   'フリートーク中': 'Free talk',
   'AIの発言 {0} / {1}（人間が発言するとリセット）': 'AI messages {0} / {1} (resets when a human speaks)',
+  'AIの発言 {0}（上限なし。人間が発言するとリセット）': 'AI messages {0} (no limit; resets when a human speaks)',
   '既定': 'Default',
   '一時停止': 'Pause',
   '{0}秒': '{0}s',

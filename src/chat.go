@@ -217,7 +217,7 @@ func NewRoom(agents []*Agent, workdir, logDir string, maxHops int, delay time.Du
 			a.state = "unavailable"
 		}
 	}
-	r := &Room{agents: agents, maxHops: maxHops, delay: delay, rotateTokens: defaultRotateTokens, turnTimeout: defaultTurnTimeout, nextID: 1, workdir: workdir, logDir: logDir,
+	r := &Room{agents: agents, maxHops: normalizeMaxHops(maxHops), delay: delay, rotateTokens: defaultRotateTokens, turnTimeout: defaultTurnTimeout, nextID: 1, workdir: workdir, logDir: logDir,
 		jobs: map[string]*jobTicket{}, commands: map[string]*CommandRun{}, cmdRunning: map[string]*CommandRun{}, leases: map[string]*Lease{}, clients: map[chan Event]struct{}{}, log: log}
 	r.cond = sync.NewCond(&r.mu)
 	r.logFile = r.newLogFile()
@@ -584,15 +584,29 @@ func (r *Room) resetLocked() {
 	r.pushStatusLocked()
 }
 
+// SetMaxHops は人間の発言1回あたりのエージェントの発言数の上限を変える。0 は無制限
 func (r *Room) SetMaxHops(n int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.maxHops = max(1, min(100, n))
+	r.maxHops = normalizeMaxHops(n)
 	if r.free != nil {
 		r.free.limitNotified = false
 		r.cond.Broadcast() // 上限で止まっているフリートークを再開させる
 	}
 	r.pushStatusLocked()
+}
+
+// normalizeMaxHops は上限の値を整える。0 は無制限で、負の値は 0（無制限）にせず最小の 1 にする
+func normalizeMaxHops(n int) int {
+	if n < 0 {
+		return 1
+	}
+	return n
+}
+
+// hopLimitReached は上限に達したか（上限 0 は無制限なので達しない）
+func hopLimitReached(hops, maxHops int) bool {
+	return maxHops > 0 && hops >= maxHops
 }
 
 // SetAgentModel はエージェントのモデルを変更する（空なら CLI の既定に戻す）。
@@ -748,7 +762,7 @@ func (r *Room) pump() {
 			r.mu.Unlock()
 			return
 		}
-		if r.disc == nil && r.hops >= r.maxHops {
+		if r.disc == nil && hopLimitReached(r.hops, r.maxHops) {
 			r.queue = nil
 			r.running = false
 			r.postLocked("system", fmt.Sprintf("自動ターンの上限（%d）に達したので停止しました。続けるにはメッセージを送ってください。", r.maxHops), "system")

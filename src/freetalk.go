@@ -6,7 +6,7 @@ package main
 // 他の参加者の新しい発言があれば「話したいことがあれば発言、なければ [pass]」と尋ねる。
 //   - 会話が delay だけ途切れてから考え始める（人間が割り込む余地を残す）
 //   - パスは表示しない。全員がパスすると会話は自然に止まり、次の発言を待つ
-//   - 人間の発言1回あたりのエージェントの発言数は maxHops まで（暴走防止）
+//   - 人間の発言1回あたりのエージェントの発言数は maxHops まで（暴走防止。0 は無制限）
 
 import (
 	"context"
@@ -52,8 +52,12 @@ func (r *Room) StartFreeTalk(topic string) error {
 		r.postLocked("human", topic, "chat")
 		r.checkRotateLocked()
 	}
+	limit := fmt.Sprintf("人間の発言1回あたり%d回まで", r.maxHops)
+	if r.maxHops == 0 {
+		limit = "上限なし"
+	}
 	r.postLocked("system", fmt.Sprintf("フリートーク開始: 全員が新しい発言を見て、話したいときに自由に発言します。"+
-		"エージェントの発言は人間の発言1回あたり%d回まで（上限の設定で変更可）。「停止」で終了します。", r.maxHops), "system")
+		"エージェントの発言は%s（上限の設定で変更可）。「停止」で終了します。", limit), "system")
 	r.log.Info("free_talk.start", "agents", len(ids))
 	for _, id := range ids {
 		a := r.agent(id)
@@ -171,7 +175,7 @@ func (r *Room) freeLoop(ft *FreeTalk, a *Agent) {
 			r.condWaitTimeout(firstAnswerTimeout)
 			continue
 		}
-		if r.hops >= r.maxHops {
+		if hopLimitReached(r.hops, r.maxHops) {
 			if !ft.limitNotified {
 				ft.limitNotified = true
 				r.postLocked("system", fmt.Sprintf("エージェントの発言が上限（%d回）に達しました。人間が発言すると再開します。", r.maxHops), "system")

@@ -73,7 +73,7 @@ Set the Edge executable with `AI_AGENT_ROOM_EDGE` and the screenshot folder with
 |---|---|---|
 | `-workdir` | Previous working directory (or the current directory) | Working directory of the agents |
 | `-port` | 8787 | Port to listen on (127.0.0.1 only) |
-| `-max-hops` | 100 | In chat, the maximum number of automatic agent messages per human message (also changeable on screen) |
+| `-max-hops` | 100 | In chat, the maximum number of automatic agent messages per human message; 0 means unlimited (also changeable on screen) |
 | `-delay` | 3 | Seconds to wait after an agent finishes before starting the next agent (also changeable on screen) |
 | `-no-open` | false | Do not open the browser on start |
 
@@ -117,7 +117,7 @@ During a discussion the order is fixed, and `@` does not interrupt it.
    - The agents work independently, so a faster agent speaks first and the others react to it
    - Passes are not shown. When everyone passes, the conversation stops naturally and waits for the next message
 3. You can post at any time. Your message reaches everyone
-4. Agents can post up to **Limit** messages per human message. At the limit they stop, and they resume when you post.
+4. Agents can post up to **Limit** messages per human message (0 means unlimited). At the limit they stop, and they resume when you post.
    An agent that was already thinking at the limit still posts, so the count can go slightly over
 5. Press **Stop** to end it. An agent that fails three times in a row leaves the free talk
 
@@ -221,7 +221,7 @@ Success returns `{"data": ...}`; failure returns `{"error_code", "message", "req
 | POST | `/api/agents` | `{"type": "claude"}` Add another agent of the same type (such as `claude2`) |
 | DELETE | `/api/agents/{id}` | Remove an added agent (the three default agents cannot be removed) |
 | GET | `/api/agents/{id}/live` | The agent's CLI output (SSE; sends the last 1000 lines, then new lines) |
-| PUT | `/api/settings` | `{"max_hops": 10, "delay_sec": 3, "leader": "claude", "workdir": "C:\\work", "rotate_tokens": 500000, "command_leader_only": true, "turn_timeout_sec": 1800}` (every field is optional. `rotate_tokens` is the session rotation threshold; 0 disables it. An empty `leader` means no leader. Changing `workdir` starts a new chat; a directory that does not exist returns 400 `INVALID_WORKDIR`. With `command_leader_only` set to true, only code blocks in messages from the leader and the human can be run. `turn_timeout_sec` is the time limit for one turn) |
+| PUT | `/api/settings` | `{"max_hops": 10, "delay_sec": 3, "leader": "claude", "workdir": "C:\\work", "rotate_tokens": 500000, "command_leader_only": true, "turn_timeout_sec": 1800}` (every field is optional. `max_hops` set to 0 means unlimited. `rotate_tokens` is the session rotation threshold; 0 disables it. An empty `leader` means no leader. Changing `workdir` starts a new chat; a directory that does not exist returns 400 `INVALID_WORKDIR`. With `command_leader_only` set to true, only code blocks in messages from the leader and the human can be run. `turn_timeout_sec` is the time limit for one turn) |
 | GET | `/api/models` | Models available for each agent `{"claude": [{"id", "label"}], ...}` |
 | PUT | `/api/agents/{id}` | `{"model": "opus", "paused": false, "timeout_sec": 600, "permission": "read_only"}` Change an agent's settings (every field is optional. `model` set to `""` returns to the default. `timeout_sec` set to 0 returns to the chat-wide setting. `permission` is `""` (default), `read_only` or `workspace_write`) |
 | POST | `/api/agents/{id}/retry` | Run a failed turn again with the same new messages |
