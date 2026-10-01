@@ -46,6 +46,7 @@ const origin = base.origin;
 const views = [
   { mode: 'chat', url: `${origin}/?token=${encodeURIComponent(token)}&smoke=chat`, file: 'chat.png' },
   { mode: 'settings', url: `${origin}/?token=${encodeURIComponent(token)}&smoke=settings`, file: 'settings.png' },
+  { mode: 'rules', url: `${origin}/?token=${encodeURIComponent(token)}&smoke=rules`, file: 'rules.png' },
   { mode: 'live', url: `${origin}/live.html?agent=codex&name=Codex&token=${encodeURIComponent(token)}&smoke=live`, file: 'live.png' },
 ];
 
@@ -74,4 +75,4 @@ for (const view of views) {
   }
 }
 
-console.log(`UI screenshots saved in ${artifactDir}: chat.png, settings.png, live.png`);
+console.log(`UI screenshots saved in ${artifactDir}: chat.png, settings.png, rules.png, live.png`);

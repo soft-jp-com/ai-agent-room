@@ -129,6 +129,9 @@ func main() {
 	mux.HandleFunc("POST /api/messages/{id}/blocks/{n}/run", room.handleRunBlock)
 	mux.HandleFunc("POST /api/messages/{id}/blocks/{n}/cancel", room.handleCancelBlock)
 	mux.HandleFunc("POST /api/config/open", room.handleOpenConfig)
+	mux.HandleFunc("GET /api/rules", room.handleGetRules)              // 起動時のルール（日本語・英語）
+	mux.HandleFunc("PUT /api/rules/{lang}", room.handlePutRules)       // ルールを設定フォルダに保存
+	mux.HandleFunc("DELETE /api/rules/{lang}", room.handleDeleteRules) // ルールを既定に戻す
 	mux.HandleFunc("POST /mcp", room.handleMCP)
 	mux.HandleFunc("GET /mcp", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusMethodNotAllowed) }) // SSE ストリームは提供しない
 

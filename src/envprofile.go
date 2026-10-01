@@ -193,24 +193,10 @@ func (r *Room) postProfileLocked() {
 		return
 	}
 	en := r.langLocked() == langEn
-	rules := pick(en, defaultRulesEn, defaultRules)
 	var legacy []string // 旧い置き場所から読んだファイル（人間に移してもらう）
-	names := []string{rulesFileName}
-	if en {
-		names = []string{rulesFileNameEn, rulesFileName}
-	}
-	for _, name := range names {
-		p, old := resolveConfigFile(r.configDir, r.legacyConfigDir, name)
-		if p == "" {
-			continue
-		}
-		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) != "" {
-			rules = strings.TrimSpace(string(b))
-		}
-		if old {
-			legacy = append(legacy, p)
-		}
-		break
+	rules, _, p, old := r.resolveRulesLocked(r.langLocked())
+	if old {
+		legacy = append(legacy, p)
 	}
 	// ルールの文面の {{ai_agent_room_dir}} は、この環境の AI Agent Room のフォルダ（エージェントに読ませない場所）に置き換える
 	rules = strings.ReplaceAll(rules, appDirPlaceholder, firstNonEmpty(r.appDirLocked(), pick(en, "the AI Agent Room folder", "AI Agent Room のフォルダ")))
@@ -231,6 +217,35 @@ func (r *Room) postProfileLocked() {
 		r.log.Warn("config.legacy", "files", strings.Join(legacy, ","))
 	}
 	r.postLocked("system", text, "system")
+}
+
+// resolveRulesLocked は lang の投稿に使うルールの文面と、その出どころ（使うファイル名。既定なら rulesDefault）を返す。
+// 英語は rules.en.md、なければ rules.md、どちらもなければ既定の英語のルール。空のファイルは既定のルールにする。
+// path・legacy は読んだファイルと、それが旧い置き場所か
+func (r *Room) resolveRulesLocked(lang string) (text, inUse, path string, legacy bool) {
+	names := []string{rulesFileName}
+	if lang == langEn {
+		names = []string{rulesFileNameEn, rulesFileName}
+	}
+	for _, name := range names {
+		p, old := resolveConfigFile(r.configDir, r.legacyConfigDir, name)
+		if p == "" {
+			continue
+		}
+		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) != "" {
+			return strings.TrimSpace(string(b)), name, p, old
+		}
+		return defaultRulesFor(lang), rulesDefault, p, old
+	}
+	return defaultRulesFor(lang), rulesDefault, "", false
+}
+
+// rulesDefault は、ファイルではなく既定のルールを使っていることを表す
+const rulesDefault = "default"
+
+// defaultRulesFor は lang の既定のルール
+func defaultRulesFor(lang string) string {
+	return pick(lang == langEn, defaultRulesEn, defaultRules)
 }
 
 // appDirPlaceholder はルールの文面で、AI Agent Room のフォルダ（設定フォルダの親）に置き換える文字列

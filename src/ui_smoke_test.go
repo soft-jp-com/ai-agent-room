@@ -79,6 +79,7 @@ func TestUISmoke(t *testing.T) {
 	mux.HandleFunc("GET /api/events", r.handleEvents)
 	mux.HandleFunc("GET /api/models", func(w http.ResponseWriter, _ *http.Request) { writeData(w, http.StatusOK, r.Models()) })
 	mux.HandleFunc("GET /api/agents/{id}/live", r.handleLive)
+	mux.HandleFunc("GET /api/rules", r.handleGetRules)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -131,6 +132,8 @@ window.addEventListener('error', (e) => { if (e instanceof ErrorEvent) window.__
 window.addEventListener('unhandledrejection', (e) => window.__uiSmokeErrors.push(String(e.reason)));
 </script>`
 	const reportView = `<script>
+// 設定のルールのタブは、load を待たずに開いてルールを読み込み始める（load の前に GET /api/rules が届くように）
+if (new URLSearchParams(location.search).get('smoke') === 'rules') { document.querySelector('#settings')?.showModal(); showSettingsTab('rules'); }
 // --dump-dom は load の直後に DOM を出すので、確認は load の中で同期的に行う。load は下の img（サーバが遅らせて返す）を
 // 待つので、その間に SSE の最初のデータが届いて描画される。--virtual-time-budget は SSE の接続が開いたままだと終わらないので使わない
 window.addEventListener('load', () => {
@@ -200,7 +203,15 @@ window.addEventListener('load', () => {
       check.usage = usage?.textContent.includes('250.0k') === true && usage.textContent.includes('1.5M') === true &&
         usage.textContent.includes('取得できず 1回') === true && usage.title.includes('1,500,000') === true;
     } else if (mode === 'settings') {
-      check = { settingsOpen: document.querySelector('#settings')?.open === true };
+      // 設定はタブで分ける。最初は「会話」だけが見える
+      const shown = [...document.querySelectorAll('#settings .tabpanel')].filter((p) => !p.hidden).map((p) => p.dataset.tab);
+      check = { settingsOpen: document.querySelector('#settings')?.open === true,
+        tabs: document.querySelectorAll('#settings [role=tab]').length === 4 && shown.join() === 'talk' };
+    } else if (mode === 'rules') {
+      // ルールのタブ: 既定のルールを編集欄に読み込み、ファイルがないことを示す
+      check = { rulesTab: !document.querySelector('#settings .tabpanel[data-tab="rules"]').hidden,
+        rulesText: document.querySelector('#rulesText')?.value.includes('進行役') === true,
+        rulesState: document.querySelector('#rulesState')?.textContent.includes('rules.md') === true };
     } else if (mode === 'live') {
       check = { liveOutput: document.querySelector('#out')?.textContent.includes('画面確認用の CLI 出力') === true };
     }

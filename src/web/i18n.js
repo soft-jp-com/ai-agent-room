@@ -24,8 +24,8 @@ const I18N_EN = {
     'When a human sends a message, agents whose last input (including cache) exceeds this value write minutes and switch to a new CLI session. 0 disables it.',
   '応答の上限': 'Response limit',
   '分': 'min',
-  '1ターン（CLI の1回の起動）の上限時間。これを過ぎると中止して AGENT_TIMEOUT を出す。エージェントごとに変える場合は下の一覧で指定する':
-    'Time limit for one turn (one CLI run). Past it the run is aborted with AGENT_TIMEOUT. Set per-agent values in the list below.',
+  '1ターン（CLI の1回の起動）の上限時間。これを過ぎると中止して AGENT_TIMEOUT を出す。エージェントごとに変える場合は「エージェント」タブで指定する':
+    'Time limit for one turn (one CLI run). Past it the run is aborted with AGENT_TIMEOUT. Set per-agent values in the "Agents" tab.',
   'このエージェントだけの応答の上限（分）。空欄なら会話全体の設定に従う': 'Response limit for this agent only (minutes). Empty uses the conversation-wide setting.',
   '↻ 再試行': '↻ Retry',
   '同じ新着を渡して、このエージェントをもう一度起動する': 'Run this agent again with the same new messages',
@@ -52,6 +52,28 @@ const I18N_EN = {
   '変更はすぐに反映され、ブラウザに保存される（作業ディレクトリは「変更」で反映し、サーバーに保存される）。':
     'Changes apply immediately. The interval, limit, session rotation, leader and language are saved on the server; mode, rounds and theme are saved in this browser. The working directory applies with "Change".',
   '閉じる': 'Close',
+  // ---- 設定のタブ・ルールの編集 ----
+  '会話': 'Chat',
+  'ルール': 'Rules',
+  '画面': 'Display',
+  '起動時と新しい会話の開始時に、環境と一緒にエージェントへ伝えるルール。保存すると次の投稿から使う（今の会話には投稿しない）。':
+    'The rules given to the agents with the environment at startup and when a new chat starts. Saved rules are used from the next post (not posted to the current chat).',
+  '編集するルールの言語。投稿には、設定の「言語」で選んだ方を使う': 'Language of the rules to edit. The post uses the one for the "Language" setting.',
+  '日本語（rules.md）': 'Japanese (rules.md)',
+  'English（rules.en.md）': 'English (rules.en.md)',
+  '{{ai_agent_room_dir}} は投稿するときに AI Agent Room のフォルダの場所に置き換わる': '{{ai_agent_room_dir}} is replaced with the location of the AI Agent Room folder when posted',
+  '保存': 'Save',
+  '既定に戻す': 'Reset to default',
+  '設定フォルダのファイルを消して、既定のルールに戻す': 'Delete the file in the config folder and go back to the default rules',
+  '設定フォルダの {0} の内容。': 'Contents of {0} in the config folder. ',
+  '既定のルール（{0} はまだない。保存すると作る）。': 'Default rules ({0} does not exist yet; saving creates it). ',
+  '今の投稿では {0} を使っている。': 'Posts currently use {0}. ',
+  '旧い置き場所のファイルを使っている。保存すると設定フォルダに書く。': 'A file in the old location is in use. Saving writes it to the config folder. ',
+  '（未保存の変更あり）': '(unsaved changes)',
+  '保存しました。次の投稿（起動時・「新しい会話」）から使います': 'Saved. Used from the next post (startup or "New chat").',
+  '既定のルールに戻しました': 'Reset to the default rules',
+  '{0} を消して既定のルールに戻しますか？': 'Delete {0} and go back to the default rules?',
+  '保存していない変更があります。破棄しますか？': 'You have unsaved changes. Discard them?',
   '設定フォルダを開く': 'Open config folder',
   'ルール（rules.md）やエージェントのできること（capabilities.json）を置くフォルダをエクスプローラーで開く。エージェントはこのフォルダを読み書きできない':
     'Open the folder that holds the rules (rules.md) and agent capabilities (capabilities.json). Agents cannot read or write this folder.',

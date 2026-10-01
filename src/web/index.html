@@ -49,6 +49,18 @@
   #agentList .dot { display: inline-block; }
   #agentList input.timeoutMin { width: 3.5em; }
   #settings .actions { justify-content: flex-end; margin-top: 8px; }
+  /* 設定のタブ（2026-10-02）。タブを切り替えても窓の大きさが変わらないよう、幅と中身の高さをそろえる */
+  #settings { width: min(46em, calc(100vw - 3em)); box-sizing: border-box; }
+  /* overflow を付けるとスクロール領域としてフォーカスされ、showModal で枠が出るので、狭い窓では折り返す */
+  #settings .tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  #settings .tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; padding: 6px 14px; margin-bottom: -1px; white-space: nowrap; }
+  #settings .tabs button[aria-selected=true] { background: var(--panel); color: var(--text); border-color: var(--line); font-weight: 600; }
+  #settings .tabpanel { min-height: 24em; }
+  #settings .tabpanel[hidden] { display: none; }
+  #settings .rulesCfg { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  #settings .rulesCfg p { margin: 0; }
+  #settings .rulesLang { display: flex; gap: 16px; }
+  #rulesText { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; resize: vertical; }
   #agents { display: flex; flex-direction: column; gap: 8px; }
   #agents .chip { flex-wrap: wrap; border-radius: 10px; padding: 4px 10px; }
   #agents .chip .state { flex-basis: 100%; min-width: 0; }
@@ -233,32 +245,51 @@
 
 <dialog id="settings">
   <h2>設定</h2>
-  <div class="settings">
+  <!-- 項目を分類してタブにする（2026-10-02 人間の依頼）。選んだタブはブラウザに保存する -->
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="talk" aria-selected="true">会話</button>
+    <button role="tab" data-tab="agents" aria-selected="false">エージェント</button>
+    <button role="tab" data-tab="rules" aria-selected="false">ルール</button>
+    <button role="tab" data-tab="view" aria-selected="false">画面</button>
+  </div>
+  <section class="tabpanel settings" data-tab="talk" role="tabpanel">
+    <label title="会話が進んでいないときに「送信」で始める進め方。フリートーク: 全員が新しい発言を見て話したいときに発言し続ける。順番に発言: 決まった順番で指定周回数だけ議論する。チャット: 宛先（なければ全員）が返事をする。返事の中で別のAIが @ID で呼ばれると、呼ばれたAIが続けて発言する（上限まで）">進め方 <select id="talkMode"><option value="freetalk">フリートーク</option><option value="discuss">順番に発言</option><option value="chat">チャット</option></select></label>
+    <label id="roundsLabel" title="全員が1回ずつ発言して1周" hidden>周回 <input id="rounds" type="number" min="1" max="20" value="3"></label>
     <label title="エージェントが話し終わってから次のエージェントを起動するまでの待ち時間">間隔 <input id="delay" type="number" min="0" max="300">秒</label>
     <label title="チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数。0 で無制限">上限 <input id="maxHops" type="number" min="0"></label>
+    <label title="1ターン（CLI の1回の起動）の上限時間。これを過ぎると中止して AGENT_TIMEOUT を出す。エージェントごとに変える場合は「エージェント」タブで指定する">応答の上限 <input id="turnTimeout" type="number" min="1" max="60">分</label>
     <label title="人間が送信したとき、直近1回の実行の入力（キャッシュ分を含む）がこの値を超えたエージェントは、議事録を作って CLI セッションを切り替える。0 で切り替えない">セッション切替 <input id="rotateTokens" type="number" min="0" max="100000000" step="10000">トークン</label>
-    <label title="1ターン（CLI の1回の起動）の上限時間。これを過ぎると中止して AGENT_TIMEOUT を出す。エージェントごとに変える場合は下の一覧で指定する">応答の上限 <input id="turnTimeout" type="number" min="1" max="60">分</label>
-    <label title="会話が進んでいないときに「送信」で始める進め方。フリートーク: 全員が新しい発言を見て話したいときに発言し続ける。順番に発言: 決まった順番で指定周回数だけ議論する。チャット: 宛先（なければ全員）が返事をする。返事の中で別のAIが @ID で呼ばれると、呼ばれたAIが続けて発言する（上限まで）">進め方 <select id="talkMode"><option value="freetalk">フリートーク</option><option value="discuss">順番に発言</option><option value="chat">チャット</option></select></label>
     <label title="進行役は作業を割り振り、人間の依頼の範囲内で進めるかどうかを判断する。変更は次の発言から反映">進行役 <select id="leader"></select></label>
-    <label title="画面の配色。別窓（CLI 出力）にも反映する">テーマ <select id="theme"><option value="system">OS に合わせる</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
-    <label id="roundsLabel" title="全員が1回ずつ発言して1周" hidden>周回 <input id="rounds" type="number" min="1" max="20" value="3"></label>
-    <label title="画面の表示言語と、起動時・新しい会話の開始時に投稿する環境とルールの言語（それ以外のエージェントへの指示やチャットの本文は変わらない）">言語 <select id="lang"></select></label>
-    <label title="このタブが見えていないとき、エージェントの発言・エラー・あなたへの依頼の増加をブラウザの通知で知らせる。本文や作業フォルダは通知に含めない。オンにしたときだけブラウザの許可を求める"><input type="checkbox" id="notify"> 背面にあるとき通知する</label>
     <label title="チャットのコードブロック（powershell・cmd・bash など）に付ける［実行］ボタンを、進行役以外の発言にも出す。進行役以外のコマンドは、実行の前に確認する。変更は次に表示する発言から反映">コマンドの実行 <select id="cmdAll"><option value="all">すべての発言に出す</option><option value="leader">進行役の発言だけ</option></select></label>
     <div class="wd"><label title="エージェントが作業するディレクトリ。変更すると新しい会話を始める。サーバを再起動しても引き継ぐ">作業ディレクトリ: <input id="workdirInput" size="60" spellcheck="false"></label> <button id="workdirApply">変更</button></div>
-  </div>
-  <h3>エージェント</h3>
-  <div class="agentsCfg">
+    <p class="muted">変更はすぐに反映され、ブラウザに保存される（作業ディレクトリは「変更」で反映し、サーバーに保存される）。</p>
+  </section>
+  <section class="tabpanel agentsCfg" data-tab="agents" role="tabpanel" hidden>
     <div id="agentList"></div>
     <div><select id="agentType" title="追加するエージェントの種類。同じ CLI をもう1つ参加させる（例: Codex の利用枠が尽きたときに Claude Code をもう1つ入れる）">
       <option value="claude">Claude Code</option><option value="codex">Codex CLI</option><option value="agy">Antigravity</option>
     </select> <button id="addAgent">追加</button></div>
     <p class="muted">追加・削除は会話が進んでいないときだけできる。既定の3つは削除できない。</p>
-  </div>
-  <p class="muted">変更はすぐに反映され、ブラウザに保存される（作業ディレクトリは「変更」で反映し、サーバーに保存される）。</p>
-  <div><button id="openConfig" title="ルール（rules.md）やエージェントのできること（capabilities.json）を置くフォルダをエクスプローラーで開く。エージェントはこのフォルダを読み書きできない">設定フォルダを開く</button> <span class="muted" id="configDir"></span></div>
-  <div><button id="runDiag" title="各エージェントの CLI を --version で起動し、見つかるか・起動できるかを確かめる（押したときだけ実行する）">診断</button> <span class="muted" id="diagNote"></span>
-    <ul id="diagList"></ul></div>
+    <div><button id="runDiag" title="各エージェントの CLI を --version で起動し、見つかるか・起動できるかを確かめる（押したときだけ実行する）">診断</button> <span class="muted" id="diagNote"></span>
+      <ul id="diagList"></ul></div>
+  </section>
+  <!-- 起動時に投稿するルールの編集（2026-10-02 人間の依頼。rules.go）。保存は「保存」を押したときだけ -->
+  <section class="tabpanel rulesCfg" data-tab="rules" role="tabpanel" hidden>
+    <p class="muted">起動時と新しい会話の開始時に、環境と一緒にエージェントへ伝えるルール。保存すると次の投稿から使う（今の会話には投稿しない）。</p>
+    <div class="rulesLang" title="編集するルールの言語。投稿には、設定の「言語」で選んだ方を使う">
+      <label><input type="radio" name="rulesLang" value="ja" checked> 日本語（rules.md）</label>
+      <label><input type="radio" name="rulesLang" value="en"> English（rules.en.md）</label>
+    </div>
+    <p class="muted" id="rulesState"></p>
+    <textarea id="rulesText" rows="14" spellcheck="false" title="{{ai_agent_room_dir}} は投稿するときに AI Agent Room のフォルダの場所に置き換わる"></textarea>
+    <div><button id="rulesSave" class="primary">保存</button> <button id="rulesReset" title="設定フォルダのファイルを消して、既定のルールに戻す">既定に戻す</button></div>
+    <div><button id="openConfig" title="ルール（rules.md）やエージェントのできること（capabilities.json）を置くフォルダをエクスプローラーで開く。エージェントはこのフォルダを読み書きできない">設定フォルダを開く</button> <span class="muted" id="configDir"></span></div>
+  </section>
+  <section class="tabpanel settings" data-tab="view" role="tabpanel" hidden>
+    <label title="画面の配色。別窓（CLI 出力）にも反映する">テーマ <select id="theme"><option value="system">OS に合わせる</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
+    <label title="画面の表示言語と、起動時・新しい会話の開始時に投稿する環境とルールの言語（それ以外のエージェントへの指示やチャットの本文は変わらない）">言語 <select id="lang"></select></label>
+    <label title="このタブが見えていないとき、エージェントの発言・エラー・あなたへの依頼の増加をブラウザの通知で知らせる。本文や作業フォルダは通知に含めない。オンにしたときだけブラウザの許可を求める"><input type="checkbox" id="notify"> 背面にあるとき通知する</label>
+  </section>
   <div class="actions"><button id="closeSettings">閉じる</button></div>
 </dialog>
 <!-- 送信前の秘密情報の警告（案1）。見つけた値そのものは表示しない -->
@@ -1068,6 +1099,7 @@ function applyLang(l) {
   translateStatic();
   for (const c of [...$('#agents').children]) c.remove();
   loadModels(); // モデル選択の「既定」「一時停止」を訳し直す
+  renderRules(); // ルールのタブの説明を訳し直す
   if (es) { es.close(); connect(); }
 }
 // 言語はサーバに保存する（起動時と新しい会話の開始時に投稿する、環境とルールの言語になる）。
@@ -1253,6 +1285,65 @@ $('#runDiag').onclick = async () => {
   $('#diagNote').textContent = '';
   if (!res) return;
   $('#diagList').innerHTML = res.map((d) => `<li title="${esc(d.bin || '')}"><strong>${esc(d.name)}</strong>: ${esc(t(DIAG_STATUS[d.status] || d.status))}${d.version ? ' ' + esc(d.version) : ''}${d.detail ? ` <span class="muted">${esc(d.detail)}</span>` : ''}${d.ms ? ` <span class="muted">(${d.ms}ms)</span>` : ''}</li>`).join('');
+};
+// ---- 設定のタブ（2026-10-02） ----
+// 最後に開いたタブはブラウザに保存し、次に開いたときもそのタブを出す
+function showSettingsTab(name) {
+  if (!document.querySelector(`#settings .tabpanel[data-tab="${name}"]`)) name = 'talk';
+  for (const b of document.querySelectorAll('#settings [role=tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+  for (const p of document.querySelectorAll('#settings .tabpanel')) p.hidden = p.dataset.tab !== name;
+  saveSetting('settingsTab', name);
+  if (name === 'rules') loadRules();
+}
+$('#settings .tabs').onclick = (e) => { const b = e.target.closest('[role=tab]'); if (b) showSettingsTab(b.dataset.tab); };
+showSettingsTab(loadSettings().settingsTab || 'talk');
+
+// ---- 起動時のルールの編集（2026-10-02。rules.go） ----
+// 日本語（rules.md）と英語（rules.en.md）を切り替えて編集する。保存は［保存］を押したときだけ
+let rules = null; // GET /api/rules の結果（言語 → RulesInfo）
+let rulesLang = lang === 'en' ? 'en' : 'ja';
+let rulesDirty = false; // 編集欄に保存していない変更がある
+$(`#settings input[name=rulesLang][value="${rulesLang}"]`).checked = true;
+function renderRules() {
+  const r = rules && rules[rulesLang];
+  if (!r) return;
+  if (!rulesDirty) $('#rulesText').value = r.text;
+  let state = r.custom ? t('設定フォルダの {0} の内容。', r.file) : t('既定のルール（{0} はまだない。保存すると作る）。', r.file);
+  if (r.in_use !== r.file && r.in_use !== 'default') state += t('今の投稿では {0} を使っている。', r.in_use); // 英語で rules.en.md がなく rules.md を使うとき
+  if (r.legacy) state += t('旧い置き場所のファイルを使っている。保存すると設定フォルダに書く。');
+  if (rulesDirty) state += t('（未保存の変更あり）');
+  $('#rulesState').textContent = state;
+}
+async function loadRules() {
+  if (rulesDirty) return; // 編集中の内容は読み直しで消さない
+  const r = await api('GET', '/api/rules');
+  if (r) { rules = r; renderRules(); }
+}
+$('#rulesText').oninput = () => { if (!rulesDirty) { rulesDirty = true; renderRules(); } };
+for (const el of document.querySelectorAll('#settings input[name=rulesLang]')) {
+  el.onchange = () => {
+    if (rulesDirty && !confirm(t('保存していない変更があります。破棄しますか？'))) { $(`#settings input[name=rulesLang][value="${rulesLang}"]`).checked = true; return; }
+    rulesLang = el.value;
+    rulesDirty = false;
+    renderRules();
+  };
+}
+$('#rulesSave').onclick = async () => {
+  const r = await api('PUT', '/api/rules/' + rulesLang, { text: $('#rulesText').value });
+  if (!r) return; // 失敗はトーストで伝え、編集中の内容は残す
+  rules = r;
+  rulesDirty = false;
+  renderRules();
+  toast(t('保存しました。次の投稿（起動時・「新しい会話」）から使います'));
+};
+$('#rulesReset').onclick = async () => {
+  if (!confirm(t('{0} を消して既定のルールに戻しますか？', rules ? rules[rulesLang].file : rulesLang))) return;
+  const r = await api('DELETE', '/api/rules/' + rulesLang);
+  if (!r) return;
+  rules = r;
+  rulesDirty = false;
+  renderRules();
+  toast(t('既定のルールに戻しました'));
 };
 $('#openConfig').onclick = async () => {
   const r = await api('POST', '/api/config/open');

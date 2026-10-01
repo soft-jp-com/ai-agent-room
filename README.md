@@ -134,7 +134,9 @@ A CLI agent cannot speak unless spoken to, so "always listening" is built as a l
 - **Add agents**: in **Settings → Agents**, choose a type and add it to have another copy of the same CLI join (for example `claude2`, called with `@claude2`). Added agents are saved in `logs/agents.json` and can be removed. Available only while no conversation is running
 - **Summarize & new chat**: the leader (or the first agent if there is no leader) summarizes the chat into decisions, unfinished work and cautions, and a new chat starts from the summary. The original log is kept. Use it to save tokens in long chats
 - **Automatic session rotation**: when you send a message, an agent whose last input exceeded **Session rotation** tokens in Settings (default 500,000; 0 disables it) — or, if usage is unknown, an agent with more than 150 messages in its session — receives the minutes (`logs/minutes/`) and continues in a new CLI session. The chat history is not lost
-- **Working directory**: change it in the Settings dialog. Changing it stops what is running and starts a new chat. If you talked in the new directory before, that conversation is restored (`logs/workdirs.json`). The changed directory is used after a restart too (`-workdir` takes priority if given)
+- **Settings tabs**: the Settings dialog is split into the **Chat** (mode, interval, limit, leader, working directory and so on), **Agents** (list, add, diagnose), **Rules** and **Display** (theme, language, notifications) tabs. The last tab you opened is saved in the browser
+- **Editing the rules**: in the **Rules** tab of Settings you can edit the "rules for this chat" given to the agents at startup and when a new chat starts. Switch between Japanese (`rules.md`) and English (`rules.en.md`), and **Save** writes the file to the config folder. **Reset to default** deletes the file and goes back to the default rules. Saved rules are used from the next post (startup or **New chat**); they are not posted to the current chat
+- **Working directory**: change it in the **Chat** tab of the Settings dialog. Changing it stops what is running and starts a new chat. If you talked in the new directory before, that conversation is restored (`logs/workdirs.json`). The changed directory is used after a restart too (`-workdir` takes priority if given)
 - **Saved settings**: Interval, Limit, Session rotation, Leader and the model selection are saved by the server in the config folder (`%LOCALAPPDATA%\ai-agent-room\config`) and restored after a restart (command-line arguments take priority). Language is also saved by the server (it sets the language of the environment and rules posted at startup). Mode, Rounds and Theme are saved in the browser
 - **Resuming conversations**: after a server restart, the previous conversation (history and each agent's session) is restored so you can continue.
   It is not restored after **New chat**. If the working directory differs from last time, the previous conversation is kept for its directory, and a conversation you had before in the starting directory is restored. A turn, discussion or free talk that was running is not resumed
@@ -187,7 +189,7 @@ To block requests from other sites, the server listens only on 127.0.0.1 and che
 
 ## Config folder
 
-Settings you edit yourself go in the config folder, outside the working directory. You can open it from the Settings dialog.
+Settings you edit yourself go in the config folder, outside the working directory. You can open it from the **Rules** tab of the Settings dialog, where you can also edit `rules.md` and `rules.en.md`.
 
 | OS | Location |
 |---|---|
@@ -237,6 +239,9 @@ Success returns `{"data": ...}`; failure returns `{"error_code", "message", "req
 | POST | `/api/messages/{id}/blocks/{n}/run` | `{"cwd": "", "confirm": false, "private": false, "no_log": false, "timeout_min": 10}` Run code block `n` (from 0) of message `id` with your permissions (202; every field is optional) |
 | POST | `/api/messages/{id}/blocks/{n}/cancel` | Stop a running code block |
 | POST | `/api/config/open` | Open the config folder (where `rules.md`, `capabilities.json` and so on go) in the file manager |
+| GET | `/api/rules` | The startup rules as `{"ja": {...}, "en": {...}}`, each with `file` (the file to edit), `text` (its contents, or the default rules if there is no file), `custom` (whether the file exists), `in_use` (the file the posts in that language use, or `default`) and `legacy` (whether that file is in the old location) |
+| PUT | `/api/rules/{lang}` | `{"text": "..."}` saves the rules to the config folder (`lang` is `ja` or `en`). Empty text returns 400 `RULES_EMPTY`, more than 64KB returns 400 `RULES_TOO_LARGE`. On success returns the same shape as `GET /api/rules` |
+| DELETE | `/api/rules/{lang}` | Delete the rules file and go back to the default rules. Returns the same shape as `GET /api/rules` |
 
 `/mcp` is the MCP server used by the agents' CLIs (switching models, borrowing and returning shared resources). The screen does not use it.
 
