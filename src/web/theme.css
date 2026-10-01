@@ -1,0 +1,113 @@
+/* AI Agent Room — テーマカラー（Termio の application/src/frontend/src/styles/theme.css と同じ変数名・値） */
+/* 標準はダーク。body.theme-light でライトにする（切り替えは theme.js） */
+
+:root {
+  /* ダークテーマ（デフォルト） */
+  --color-bg-primary:    #1e1e1e;
+  --color-bg-secondary:  #2d2d2d;
+  --color-bg-tertiary:   #3e3e3e;
+  --color-bg-input:      #1e1e1e;
+  --color-bg-hover:      #4e4e4e;
+  --color-bg-panel-alt:  #252526;
+  --color-bg-active:     #1e3a5f;
+
+  --color-border:        #3e3e3e;
+  --color-border-input:  #555555;
+
+  --color-text-primary:  #d4d4d4;
+  --color-text-muted:    #808080;
+  --color-text-dim:      #aaaaaa;
+  --color-active-text:   #cce5ff;
+
+  --color-accent:        #007acc;
+  --color-accent-hover:  #005fa3;
+  --color-accent-active: #004e8c;
+
+  --color-error-bg:      #5a1e1e;
+  --color-error-text:    #f48771;
+  --color-success-bg:       #1e3a1e;
+  --color-success-text:     #4ec94e;
+  --color-success-border:   #2d5a2d;
+  --color-success-bg-hover: #2a4a2a;
+  --color-warn-bg:          #3a2e1e;
+  --color-warn-text:        #e5c07b;
+
+  --font-mono: 'Consolas', 'Courier New', monospace;
+}
+
+body { color-scheme: dark; } /* ブラウザ標準の部品（選択肢の一覧など）もテーマに合わせる */
+
+/* ─── グローバルスクロールバー ─────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-bg-hover);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--color-bg-secondary);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-bg-hover) var(--color-bg-secondary);
+}
+
+body.theme-light {
+  color-scheme: light;
+
+  --color-bg-primary:    #f5f5f5;
+  --color-bg-secondary:  #e8e8e8;
+  --color-bg-tertiary:   #d4d4d4;
+  --color-bg-input:      #ffffff;
+  --color-bg-hover:      #c4c4c4;
+  --color-bg-panel-alt:  #dedede;
+  --color-bg-active:     #cce4ff;
+
+  --color-border:        #c8c8c8;
+  --color-border-input:  #999999;
+
+  --color-text-primary:  #1e1e1e;
+  --color-text-muted:    #555555;
+  --color-text-dim:      #666666;
+  --color-active-text:   #003878;
+
+  --color-accent:        #007acc;
+  --color-accent-hover:  #005fa3;
+  --color-accent-active: #004e8c;
+
+  --color-error-bg:      #fde8e8;
+  --color-error-text:    #d32f2f;
+  --color-success-bg:       #e8f5e9;
+  --color-success-text:     #2e7d32;
+  --color-success-border:   #388e3c;
+  --color-success-bg-hover: #c8e6c9;
+  --color-warn-bg:          #fff8e1;
+  --color-warn-text:        #e65100;
+}
+
+/* ─── ボタン（Termio の .btn-secondary / .btn-primary と同じ見た目） ─────────── */
+
+button {
+  font: inherit; font-size: 13px; cursor: pointer;
+  background: var(--color-bg-tertiary); color: var(--color-text-primary);
+  border: none; border-radius: 4px; padding: 4px 12px;
+}
+button:hover:not(:disabled) { background: var(--color-bg-hover); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--color-accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: var(--color-accent-hover); }

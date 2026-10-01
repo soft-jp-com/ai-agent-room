@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>CLI 出力</title>
+<link rel="stylesheet" href="/theme.css">
+<style>
+  /* 配色は theme.css（Termio と同じ変数）から取る。body.theme-light で上書きされる値を拾うため body で定義する */
+  body {
+    --bg: var(--color-bg-primary); --panel: var(--color-bg-secondary); --text: var(--color-text-primary);
+    --muted: var(--color-text-muted); --line: var(--color-border); --err: var(--color-error-text); --info: var(--color-accent);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 system-ui, "Segoe UI", "Yu Gothic UI", sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 14px; margin: 0; }
+  #state { color: var(--muted); }
+  button { padding: 2px 10px; } /* 見た目は theme.css（Termio と同じ） */
+  #out { flex: 1; overflow: auto; margin: 0; padding: 8px 12px; font: 12px/1.45 var(--font-mono); white-space: pre-wrap; word-break: break-all; }
+  .ln .t { color: var(--muted); margin-right: 8px; }
+  .ln.stderr { color: var(--err); }
+  .ln.info { color: var(--info); font-weight: 600; margin-top: 6px; }
+  /* 整形表示（生の JSON 表示と切り替える） */
+  body.raw .fmt, body:not(.raw) .raw { display: none; }
+  .fmt.tool { color: var(--info); }
+  .fmt.text { font: 13px/1.6 system-ui, "Segoe UI", "Yu Gothic UI", sans-serif; margin: 4px 0; }
+  .fmt.meta { color: var(--muted); }
+  .fmt.error, .fmt.error summary { color: var(--err); }
+  .fmt details { display: inline-block; vertical-align: top; }
+  .fmt summary { color: var(--muted); cursor: pointer; }
+  .fmt.error summary { color: var(--err); }
+  .fmt details pre { margin: 2px 0 4px; padding: 4px 8px; border-left: 2px solid var(--line); white-space: pre-wrap; font: inherit; }
+</style>
+</head>
+<body>
+<script src="/theme.js"></script>
+<header>
+  <h1 id="title">CLI 出力</h1>
+  <span id="state">接続中…</span>
+  <label><input type="checkbox" id="follow" checked> 最新に追従</label>
+  <label title="CLI が出力した JSON の行をそのまま表示する"><input type="checkbox" id="raw"> 生の JSON を表示</label>
+  <button id="clear" title="この窓の表示だけを消す（サーバの記録は消えない）">表示を消去</button>
+</header>
+<pre id="out"></pre>
+<script src="i18n.js"></script>
+<script>
+// エージェントの CLI 出力（stdout / stderr）をストリーミング表示する別窓。
+// 開いている間だけ /api/agents/{id}/live に接続し、最初にサーバが保持する直近の行を受け取る。
+const $ = (s) => document.querySelector(s);
+const id = new URLSearchParams(location.search).get('agent') || '';
+const name = new URLSearchParams(location.search).get('name') || id;
+translateDom(document.querySelector('header')); // 言語はチャット画面と共有する
+document.title = t('{0} の CLI 出力', name);
+$('#title').textContent = t('{0}（@{1}）の CLI 出力', name, id);
+const MAX_LINES = 3000; // 表示する行数の上限（古い行から消す）
+let lastSeq = 0;
+
+function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+// ---- 整形表示 ------------------------------------------------------------------
+// CLI の stream-json の1行を、表示用の項目の配列にする。項目は
+//   { kind: 'tool' | 'result' | 'text' | 'meta' | 'error', head, body?, merge? }
+// body を持つ項目（ツールの結果・思考）は折りたたんで表示する。
+// 表示しない行（思考トークン数、利用枠の通知など）は空の配列、JSON でない行は null を返す。
+// merge を持つ項目は、直前の同じ merge の本文に続けて書く（agy の返答は少しずつ届くため）。
+function firstStr(o, keys) {
+  if (!o || typeof o !== 'object') return '';
+  for (const k of keys) if (typeof o[k] === 'string' && o[k]) return o[k];
+  return '';
+}
+function oneLine(s, n = 120) {
+  s = String(s || '').replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+const DETAIL_KEYS = ['command', 'file_path', 'notebook_path', 'pattern', 'url', 'query', 'description', 'prompt',
+  'CommandLine', 'TargetFile', 'AbsolutePath', 'Query', 'Url'];
+function toolItem(name, input, prefix = '') {
+  const d = firstStr(input, DETAIL_KEYS);
+  return { kind: 'tool', head: `${prefix}▶ ${name}${d ? ': ' + oneLine(d) : ''}` };
+}
+function resultItem(label, body, isError) {
+  return { kind: isError ? 'error' : 'result', head: label, body: String(body ?? '') };
+}
+function claudeContentText(c) { // tool_result の content は文字列か、{type:'text', text} の配列
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map((x) => (x && x.type === 'text' ? x.text : x && x.type ? `[${x.type}]` : '')).join('\n');
+  return c == null ? '' : JSON.stringify(c);
+}
+
+// Claude CLI（claude -p --output-format stream-json）
+function formatClaude(j) {
+  const sub = j.parent_tool_use_id ? t('（サブエージェント）') : '';
+  switch (j.type) {
+    case 'system':
+      return j.subtype === 'init' ? [{ kind: 'meta', head: t('セッション開始（{0}）', j.model || t('モデル不明')) }] : [];
+    case 'assistant': {
+      const out = [];
+      for (const c of (j.message && j.message.content) || []) {
+        if (c.type === 'text' && c.text) out.push({ kind: 'text', head: sub + c.text });
+        else if (c.type === 'tool_use') out.push(toolItem(c.name, c.input, sub));
+        else if (c.type === 'thinking' && c.thinking) out.push(resultItem(sub + t('思考'), c.thinking, false));
+      }
+      return out;
+    }
+    case 'user': {
+      const out = [];
+      for (const c of (j.message && j.message.content) || []) {
+        if (c.type === 'tool_result') out.push(resultItem(sub + t('結果'), claudeContentText(c.content), c.is_error));
+      }
+      return out;
+    }
+    case 'result': {
+      const sec = j.duration_ms ? `、${(j.duration_ms / 1000).toFixed(1)}秒` : '';
+      return [{ kind: j.is_error ? 'error' : 'meta', head: t('■ 完了（{0}）', (j.subtype || '') + sec) }];
+    }
+  }
+  return [];
+}
+
+// Codex CLI（codex exec --json）
+function formatCodex(j) {
+  const it = j.item || {};
+  switch (j.type) {
+    case 'thread.started': return [{ kind: 'meta', head: t('セッション開始') }];
+    case 'turn.completed': return [{ kind: 'meta', head: t('■ 完了') }];
+    case 'turn.failed': return [{ kind: 'error', head: t('■ 失敗: {0}', oneLine(firstStr(j.error, ['message']))) }];
+    case 'error': return [{ kind: 'error', head: t('エラー: {0}', oneLine(j.message)) }];
+    case 'item.started':
+      if (it.type === 'command_execution') return [toolItem('command', { command: it.command })];
+      if (it.type === 'mcp_tool_call') return [toolItem(`${it.server}.${it.tool}`, null)];
+      if (it.type === 'web_search') return [toolItem('web_search', { query: it.query })];
+      return [];
+    case 'item.completed':
+      switch (it.type) {
+        case 'agent_message': return [{ kind: 'text', head: it.text || '' }];
+        case 'reasoning': return [resultItem(t('思考'), it.text, false)];
+        case 'command_execution':
+          return [resultItem(t('結果（終了コード {0}）', it.exit_code ?? '?'), it.aggregated_output, it.exit_code != null && it.exit_code !== 0)];
+        case 'file_change':
+          return [{ kind: 'tool', head: '▶ file_change: ' + oneLine((it.changes || []).map((c) => `${c.kind || ''} ${c.path}`).join(', ')) }];
+        case 'mcp_tool_call': return [resultItem(t('結果'), it.result ? JSON.stringify(it.result, null, 2) : '', it.status === 'failed')];
+        case 'error': return [{ kind: 'error', head: t('エラー: {0}', oneLine(it.message)) }];
+      }
+      return [];
+  }
+  return [];
+}
+
+// Antigravity（agy --output-format stream-json）
+function formatAgy(j) {
+  if (j.event === 'init') return [{ kind: 'meta', head: t('セッション開始') }];
+  if (j.event === 'result') {
+    const r = j.result || {};
+    return [{ kind: r.status === 'SUCCESS' ? 'meta' : 'error', head: t('■ 完了（{0}）', (r.status || '') + (r.error ? '：' + oneLine(r.error) : '')) }];
+  }
+  if (j.event !== 'step_update') return [];
+  const su = j.step_update || {};
+  const info = su.tool_info || {};
+  if (su.step_type === 'agent_response') {
+    return su.text_delta ? [{ kind: 'text', head: su.text_delta, merge: `${su.conversation_id}-${su.step_index}` }] : [];
+  }
+  if (su.step_type !== 'tool') return [];
+  if (su.state === 'ACTIVE') return [toolItem(su.tool_name, info.parameters)];
+  if (su.state === 'DONE') return [resultItem(t('結果'), typeof info.output === 'string' ? info.output : JSON.stringify(info.output ?? ''), false)];
+  if (su.state === 'ERROR') return [resultItem(t('エラー'), firstStr(info.error, ['message']) || JSON.stringify(info.error ?? ''), true)];
+  return [];
+}
+
+// salvageLine は、長すぎてサーバが途中で切った行（JSON として読めない）から、
+// Claude のツール呼び出し・本文・ツールの結果の先頭だけを拾う。拾えなければ null
+const STR = '((?:[^"\\\\]|\\\\.)*)'; // JSON 文字列の中身（途中で切れていてもよい）
+function jsonStr(s) { try { return JSON.parse('"' + s + '"'); } catch { return s; } }
+function salvageLine(text) {
+  const cut = t('…（長い行のため途中まで）');
+  let m;
+  if ((m = text.match(new RegExp(`"type":"tool_use","id":"[^"]*","name":"([^"]+)","input":\\{"(\\w+)":"${STR}`)))) {
+    return [toolItem(m[1], { [m[2]]: jsonStr(m[3]) })];
+  }
+  if ((m = text.match(new RegExp(`"type":"text","text":"${STR}`)))) return [{ kind: 'text', head: jsonStr(m[1]) + cut }];
+  if ((m = text.match(new RegExp(`"type":"tool_result","content":"${STR}`)))) return [resultItem(t('結果'), jsonStr(m[1]) + '\n' + cut, false)];
+  if (text.startsWith('{"type":"system","subtype":"init"')) return [{ kind: 'meta', head: t('セッション開始') }];
+  if (text.includes('"type":"thinking"')) return []; // 思考の署名だけの行（本文は空）
+  if (/^\{"duration_api_ms":/.test(text)) return [{ kind: 'meta', head: t('■ 完了') }]; // Claude の最終行（result）
+  return null;
+}
+
+function formatLine(text) {
+  if (!text || text[0] !== '{') return null;
+  let j;
+  try { j = JSON.parse(text); } catch { return salvageLine(text); } // 長すぎて途中で切れた行など
+  if (j.event) return formatAgy(j);
+  if (typeof j.type !== 'string') return null;
+  if (/^(item|thread|turn)\./.test(j.type) || j.type === 'error') return formatCodex(j);
+  return formatClaude(j);
+}
+
+let lastMerge = null; // 直前に書いた、続きを書き足せる本文 { key, el }
+function renderItem(it, time) {
+  if (it.merge && lastMerge && lastMerge.key === it.merge) {
+    lastMerge.el.textContent += it.head;
+    return null;
+  }
+  const el = document.createElement('div');
+  el.className = 'ln fmt ' + it.kind;
+  el.innerHTML = `<span class="t">${esc(time)}</span>`;
+  lastMerge = null;
+  if (it.body !== undefined) {
+    const first = it.body.split('\n')[0];
+    const lines = it.body ? it.body.split('\n').length : 0;
+    const d = document.createElement('details');
+    d.innerHTML = `<summary>◀ ${esc(it.head)}（${t('{0}行', lines)}）${it.body ? '：' + esc(oneLine(first, 80)) : ''}</summary><pre>${esc(it.body)}</pre>`;
+    el.appendChild(d);
+  } else {
+    const span = document.createElement('span');
+    span.textContent = it.head;
+    el.appendChild(span);
+    if (it.merge) lastMerge = { key: it.merge, el: span };
+  }
+  return el;
+}
+
+function add(ln) {
+  if (ln.seq <= lastSeq) return; // 再接続で届く保持分の重複を除く
+  lastSeq = ln.seq;
+  const out = $('#out');
+  const items = ln.stream === 'stdout' ? formatLine(ln.text) : null;
+  // 整形できた行は「生の JSON を表示」のときだけ出し、代わりに整形した項目を足す。
+  // 整形できない行（info、stderr、JSON でない行）はどちらの表示でも出す
+  const el = document.createElement('div');
+  el.className = 'ln ' + ln.stream + (items ? ' raw' : '');
+  el.innerHTML = `<span class="t">${esc(ln.time)}</span>${esc(ln.text)}`;
+  out.appendChild(el);
+  if (items) {
+    for (const it of items) {
+      const f = renderItem(it, ln.time);
+      if (f) out.appendChild(f);
+    }
+  } else {
+    lastMerge = null;
+  }
+  while (out.childElementCount > MAX_LINES) out.firstElementChild.remove();
+  if ($('#follow').checked) out.scrollTop = out.scrollHeight;
+}
+$('#raw').onchange = () => {
+  document.body.classList.toggle('raw', $('#raw').checked);
+  if ($('#follow').checked) $('#out').scrollTop = $('#out').scrollHeight;
+};
+$('#clear').onclick = () => { $('#out').innerHTML = ''; lastMerge = null; };
+$('#out').addEventListener('scroll', () => {
+  const out = $('#out');
+  $('#follow').checked = out.scrollHeight - out.scrollTop - out.clientHeight < 40; // 上へ戻したら追従を止める
+});
+
+const es = new EventSource('/api/agents/' + encodeURIComponent(id) + '/live');
+es.onopen = () => { $('#state').textContent = t('受信中'); };
+es.onerror = () => { $('#state').textContent = t('切断（自動で再接続します）'); };
+es.onmessage = (e) => add(JSON.parse(e.data));
+</script>
+</body>
+</html>

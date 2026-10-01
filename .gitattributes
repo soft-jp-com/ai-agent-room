@@ -1,0 +1,4 @@
+# cmd.exe は LF 改行の UTF-8 バッチを正しく解釈できないため CRLF に固定する
+*.bat text eol=crlf
+# sh は CRLF 改行のスクリプトを正しく解釈できないため LF に固定する（macOS・Linux 用の start.sh）
+*.sh text eol=lf

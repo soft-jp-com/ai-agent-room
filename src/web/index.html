@@ -1,0 +1,1259 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Agent Room</title>
+<link rel="stylesheet" href="/theme.css">
+<style>
+  /* 配色は theme.css（Termio と同じ変数）から取る。body.theme-light で上書きされる値を拾うため body で定義する */
+  body {
+    --bg: var(--color-bg-primary); --panel: var(--color-bg-secondary); --text: var(--color-text-primary);
+    --muted: var(--color-text-muted); --line: var(--color-border);
+    --human: var(--color-accent); --human-text: #ffffff; --system: var(--color-warn-text);
+    --code-bg: var(--color-bg-primary); --accent-bg: var(--color-bg-active);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    display: flex; flex-direction: row;
+  }
+  /* 2ペイン: 左にエージェント・操作・作業ディレクトリ、右にチャット */
+  header {
+    display: flex; flex-direction: column; align-items: stretch; gap: 14px;
+    width: 280px; flex-shrink: 0; overflow-y: auto;
+    padding: 14px; border-right: 1px solid var(--line); background: var(--panel);
+  }
+  #pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  header h1 { font-size: 16px; margin: 0; }
+  #settings #toast { left: 50%; } /* 設定ダイアログ内ではダイアログ（画面中央）に合わせる */
+  #workdir { color: var(--muted); font-size: 12px; font-family: var(--font-mono); word-break: break-all; }
+  #settings, #secretWarn { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); min-width: min(28em, calc(100vw - 3em)); }
+  #settings::backdrop, #secretWarn::backdrop { background: rgba(0, 0, 0, .3); }
+  #secretWarn { max-width: min(36em, calc(100vw - 3em)); font-size: 13px; }
+  #secretWarn h2 { font-size: 15px; margin: 0 0 12px; }
+  #secretWarn .actions { justify-content: flex-end; margin-top: 12px; }
+  #settings h2 { font-size: 15px; margin: 0 0 12px; }
+  #settings .settings { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+  #settings .settings label[hidden] { display: none; }
+  #settings input[type=number] { width: 60px; }
+  #settings input#rotateTokens { width: 110px; } /* 最大 100000000（9桁）とスピンボタンが収まる幅 */
+  #settings .wd { font-family: var(--font-mono); font-size: 12px; }
+  #settings .wd input { font: inherit; max-width: 100%; box-sizing: border-box; } /* size="60" のままだと狭い窓で横にはみ出す */
+  #settings h3 { font-size: 13px; margin: 14px 0 6px; }
+  #settings .agentsCfg { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  #settings .agentsCfg .muted { margin: 0; }
+  #agentList div { display: flex; align-items: center; gap: 8px; }
+  #agentList .dot { display: inline-block; }
+  #agentList input.timeoutMin { width: 3.5em; }
+  #settings .actions { justify-content: flex-end; margin-top: 8px; }
+  #agents { display: flex; flex-direction: column; gap: 8px; }
+  #agents .chip { flex-wrap: wrap; border-radius: 10px; padding: 4px 10px; }
+  #agents .chip .state { flex-basis: 100%; min-width: 0; }
+  #agents .chip .usage { flex-basis: 100%; min-width: 0; font-size: 11px; }
+  #agents .chip .usage { display: none; } /* 左ペインが狭くなるため、トークン使用量の行は当面表示しない（2026-10-01 人間の依頼）。値は status に残す */
+  #agents .chip .activity { max-width: 100%; }
+  #agents .chip select { flex-basis: 100%; max-width: none; }
+  #agents .chip .liveBtn { margin-left: auto; padding: 0 8px; font-size: 11px; }
+  #agents .chip .intBtn { padding: 0 8px; font-size: 11px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px;
+    border: 1px solid var(--line); border-radius: 999px; font-size: 13px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .chip.thinking .dot { animation: pulse 1s infinite; }
+  .chip.unavailable { opacity: .45; text-decoration: line-through; }
+  .chip.paused { opacity: .6; border-style: dashed; }
+  .chip .st, .muted { color: var(--muted); font-size: 12px; }
+  .chip .activity { display: inline-block; max-width: 24em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .chip select {
+    font: inherit; font-size: 12px; color: var(--text); background: var(--color-bg-input);
+    border: 1px solid var(--color-border-input); border-radius: 4px; padding: 0 2px; max-width: 16em;
+  }
+  @keyframes pulse { 50% { opacity: .2; } }
+  .controls { display: flex; flex-direction: column; align-items: stretch; gap: 6px; font-size: 13px; margin-top: auto; } /* 左ペインの下に寄せる */
+  .controls input { width: 52px; }
+  /* ボタンは theme.css（Termio と同じ見た目） */
+  input, textarea, select {
+    font: inherit; color: var(--text); background: var(--color-bg-input);
+    border: 1px solid var(--color-border-input); border-radius: 4px; padding: 4px 8px;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--color-accent); }
+
+  #banner {
+    display: none; padding: 6px 16px; font-size: 13px; background: var(--accent-bg);
+    border-bottom: 1px solid var(--line); align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #banner.show { display: flex; }
+  #banner .topic { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+
+  #log { flex: 1; overflow-y: auto; padding: 16px; }
+  .inner { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .msg { display: flex; flex-direction: column; max-width: 88%; }
+  .msg .who { font-size: 12px; font-weight: 600; color: var(--c); margin-bottom: 2px; }
+  .msg .who .meta { font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .msg .who .reply { border: none; background: none; padding: 0 4px; margin-left: 4px; font-size: 12px; color: var(--muted); cursor: pointer; opacity: 0; }
+  .msg:hover .who .reply, .msg .who .reply:focus-visible { opacity: 1; }
+  .msg .reply-ref { font-size: 12px; color: var(--muted); margin-bottom: 2px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg .reply-ref:hover { text-decoration: underline; }
+  .msg.flash .body { outline: 2px solid var(--c); }
+  #replyBar { display: none; font-size: 12px; color: var(--muted); align-items: center; gap: 6px; }
+  #replyBar.on { display: flex; }
+  #replyBar button { padding: 0 6px; font-size: 12px; }
+  .msg .body {
+    background: color-mix(in srgb, var(--c) 14%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--c) 35%, var(--line)); border-left: 4px solid var(--c);
+    border-radius: 8px; padding: 8px 12px; overflow-wrap: anywhere;
+  }
+  .msg.human { align-self: flex-end; align-items: flex-end; }
+  .msg.human .body { background: var(--human); color: var(--human-text); border: none; }
+  .msg.pass { opacity: .5; }
+  .msg.pass .body { padding: 2px 10px; font-size: 13px; }
+  .msg.system { align-self: center; max-width: 100%; }
+  .msg.system .body {
+    background: transparent; border: 1px dashed var(--system); color: var(--system);
+    font-size: 13px; white-space: pre-wrap;
+  }
+  .body p { margin: 0 0 .5em; } .body p:last-child { margin-bottom: 0; }
+  .body pre {
+    background: var(--code-bg); color: var(--text); padding: 8px 10px; border-radius: 6px;
+    overflow-x: auto; margin: .5em 0; font-size: 13px;
+  }
+  .body code { font-family: var(--font-mono); font-size: .92em; }
+  .body :not(pre) > code { background: var(--code-bg); color: var(--text); padding: 1px 4px; border-radius: 4px; }
+  .mention { font-weight: 600; }
+  /* コードブロックの実行（案 7.1） */
+  .body .cmd { margin: -.3em 0 .6em; font-size: 12px; }
+  .body button.retry { margin-left: 6px; padding: 0 8px; font-size: 12px; }
+  .body .cmdbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .body .cmdbar button { padding: 1px 10px; font-size: 12px; }
+  .body .cmdbar input.timeout { width: 4em; padding: 1px 4px; font-size: 12px; }
+  .body .cmdbar input.cwd { width: 16em; font-family: var(--font-mono); font-size: 12px; padding: 1px 6px; }
+  .body .cmdnote { margin-top: 2px; }
+  .body .cmd.danger .cmdnote { color: var(--color-error-text); }
+  .body .cmd.ok .cmdstate { color: var(--color-success-text); }
+  .body .cmd.ng .cmdstate { color: var(--color-error-text); }
+  .body pre.cmdout { max-height: 16em; overflow: auto; white-space: pre-wrap; margin-top: 4px; }
+  .msg.result .body { font-size: 13px; }
+  /* @human 宛ての発言（案 7.2 の第一段階） */
+  .msg.tohuman .body { border: 2px solid var(--color-warn-text); border-left-width: 6px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-warn-text) 18%, transparent); }
+  .msg.tohuman.done .body { border-color: var(--line); border-left-color: var(--c); box-shadow: none; }
+  .msg .badge, #inboxPanel .badge { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    background: var(--color-warn-bg); color: var(--color-warn-text); border: 1px solid var(--color-warn-text); }
+  .msg.done .badge { opacity: .5; }
+  .msg .who .todo { margin-left: 6px; padding: 0 8px; font-size: 11px; }
+  /* @human 宛て以外を隠す（表示の切り替え） */
+  #viewbar { display: flex; align-items: center; gap: 12px; padding: 2px 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  #viewbar label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  body.hide-minor #list .msg.minor { display: none; }
+  body.viewing-logs #viewbar { display: none !important; }
+  #inbox { display: none; padding: 4px 16px; font-size: 13px; background: var(--color-warn-bg); color: var(--color-warn-text);
+    border-bottom: 1px solid var(--color-warn-text); cursor: pointer; }
+  #inbox.show { display: block; }
+  #inbox:hover { text-decoration: underline; }
+  #inboxPanel { max-height: 40vh; overflow-y: auto; padding: 6px 16px 8px; background: var(--panel); border-bottom: 1px solid var(--color-warn-text); font-size: 13px; }
+  #inboxPanel[hidden] { display: none; }
+  #inboxPanel .ipbar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  #inboxPanel .ipbar strong { flex: 1; }
+  #inboxPanel .ipbar button, #inboxPanel .iitem button { padding: 0 8px; font-size: 12px; }
+  #inboxPanel .iitem { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid var(--line); }
+  #inboxPanel .iwho { color: var(--c); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  #inboxPanel .badge { margin-left: 0; }
+  #inboxPanel .itext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  #inboxPanel .itext:hover { text-decoration: underline; }
+  #inboxPanel .iitem.unseen .itext { font-weight: 600; }
+  body.viewing-logs #inboxPanel { display: none !important; }
+  body.viewing-logs #inbox { display: none !important; }
+  #waiting { align-self: center; color: var(--muted); font-size: 13px; }
+  .msg.partial { opacity: .65; } /* 書きかけの本文（案5）。確定した発言が届いたら消える */
+  .msg.partial .body { white-space: pre-wrap; border-style: dashed; }
+
+  /* 過去ログ */
+  #logs { display: none; }
+  body.viewing-logs #logs { display: flex; }
+  body.viewing-logs #list, body.viewing-logs footer, body.viewing-logs #banner { display: none !important; }
+  .loglist { display: flex; flex-direction: column; gap: 8px; }
+  .logitem {
+    text-align: left; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px;
+    padding: 8px 12px; background: var(--panel);
+  }
+  .logitem .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .logbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .logbar h2 { font-size: 15px; margin: 0; flex: 1; }
+  /* 会話の検索（案 8.4） */
+  .searchbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .searchbar input[type=search] { flex: 1; min-width: 180px; }
+  .hititem { text-align: left; display: grid; gap: 2px; padding: 8px 12px; background: var(--panel); width: 100%; }
+  .hititem .snippet { white-space: normal; overflow-wrap: anywhere; }
+  .hititem mark { background: var(--accent, #ffe08a); color: inherit; }
+  .msg.hit { outline: 2px solid var(--accent, #d97757); }
+  .msg .branch { display: block; margin-top: 4px; padding: 0 8px; font-size: 11px; }
+
+  footer { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; }
+  footer .inner { gap: 6px; }
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+  .quick button { padding: 1px 8px; font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  #input { flex: 1 1 300px; resize: none; min-height: 42px; max-height: 40vh; padding: 8px 10px; }
+  .actions { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  .actions input { width: 48px; }
+  #toast {
+    position: fixed; bottom: 110px; left: calc(50% + 140px); transform: translateX(-50%); /* 右の列の中央（左の列 280px の半分だけずらす） */
+    background: var(--color-error-bg); color: var(--color-error-text); border: 1px solid var(--color-error-text);
+    padding: 6px 14px; border-radius: 4px; font-size: 13px; display: none;
+  }
+  @media (max-width: 600px) {
+    body { flex-direction: column; }
+    #toast { left: 50%; }
+    header { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; }
+    .controls { flex-direction: row; flex-wrap: wrap; }
+    #log { padding: 12px; }
+    .msg { max-width: 100%; }
+    .actions { width: 100%; justify-content: flex-end; }
+  }
+</style>
+</head>
+<body>
+<script src="/theme.js"></script>
+<header>
+  <h1>AI Agent Room</h1>
+  <div id="agents"></div>
+  <div class="controls">
+    <button id="openSettings" title="間隔・上限・進め方・進行役・周回・作業ディレクトリ">設定</button>
+    <button id="stop">停止</button>
+    <button id="reset" title="履歴と各エージェントのセッションを破棄">新しい会話</button>
+    <button id="summarize" title="進行役（いなければ最初のエージェント）が会話を要約し、要約を引き継いで新しい会話を始める。元のログは残る">要約して新しい会話</button>
+    <button id="openLogs">ログ</button>
+  </div>
+  <div id="workdir"></div>
+</header>
+<div id="pane">
+
+<dialog id="settings">
+  <h2>設定</h2>
+  <div class="settings">
+    <label title="エージェントが話し終わってから次のエージェントを起動するまでの待ち時間">間隔 <input id="delay" type="number" min="0" max="300">秒</label>
+    <label title="チャットで、人間の発言1回あたりにエージェントが自動で発言できる最大回数">上限 <input id="maxHops" type="number" min="1" max="100"></label>
+    <label title="人間が送信したとき、直近1回の実行の入力（キャッシュ分を含む）がこの値を超えたエージェントは、議事録を作って CLI セッションを切り替える。0 で切り替えない">セッション切替 <input id="rotateTokens" type="number" min="0" max="100000000" step="10000">トークン</label>
+    <label title="1ターン（CLI の1回の起動）の上限時間。これを過ぎると中止して AGENT_TIMEOUT を出す。エージェントごとに変える場合は下の一覧で指定する">応答の上限 <input id="turnTimeout" type="number" min="1" max="60">分</label>
+    <label title="会話が進んでいないときに「送信」で始める進め方。フリートーク: 全員が新しい発言を見て話したいときに発言し続ける。順番に発言: 決まった順番で指定周回数だけ議論する。チャット: 宛先（なければ全員）が返事をする。返事の中で別のAIが @ID で呼ばれると、呼ばれたAIが続けて発言する（上限まで）">進め方 <select id="talkMode"><option value="freetalk">フリートーク</option><option value="discuss">順番に発言</option><option value="chat">チャット</option></select></label>
+    <label title="進行役は作業を割り振り、人間の依頼の範囲内で進めるかどうかを判断する。変更は次の発言から反映">進行役 <select id="leader"></select></label>
+    <label title="画面の配色。別窓（CLI 出力）にも反映する">テーマ <select id="theme"><option value="system">OS に合わせる</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
+    <label id="roundsLabel" title="全員が1回ずつ発言して1周" hidden>周回 <input id="rounds" type="number" min="1" max="20" value="3"></label>
+    <label title="画面の表示言語（エージェントへの指示やチャットの本文は変わらない）">言語 <select id="lang"></select></label>
+    <label title="このタブが見えていないとき、エージェントの発言・エラー・あなたへの依頼の増加をブラウザの通知で知らせる。本文や作業フォルダは通知に含めない。オンにしたときだけブラウザの許可を求める"><input type="checkbox" id="notify"> 背面にあるとき通知する</label>
+    <label title="チャットのコードブロック（powershell・cmd・bash など）に付ける［実行］ボタンを、進行役以外の発言にも出す。進行役以外のコマンドは、実行の前に確認する。変更は次に表示する発言から反映">コマンドの実行 <select id="cmdAll"><option value="all">すべての発言に出す</option><option value="leader">進行役の発言だけ</option></select></label>
+    <div class="wd"><label title="エージェントが作業するディレクトリ。変更すると新しい会話を始める。サーバを再起動しても引き継ぐ">作業ディレクトリ: <input id="workdirInput" size="60" spellcheck="false"></label> <button id="workdirApply">変更</button></div>
+  </div>
+  <h3>エージェント</h3>
+  <div class="agentsCfg">
+    <div id="agentList"></div>
+    <div><select id="agentType" title="追加するエージェントの種類。同じ CLI をもう1つ参加させる（例: Codex の利用枠が尽きたときに Claude Code をもう1つ入れる）">
+      <option value="claude">Claude Code</option><option value="codex">Codex CLI</option><option value="agy">Antigravity</option>
+    </select> <button id="addAgent">追加</button></div>
+    <p class="muted">追加・削除は会話が進んでいないときだけできる。既定の3つは削除できない。</p>
+  </div>
+  <p class="muted">変更はすぐに反映され、ブラウザに保存される（作業ディレクトリは「変更」で反映し、サーバーに保存される）。</p>
+  <div><button id="openConfig" title="ルール（rules.md）やエージェントのできること（capabilities.json）を置くフォルダをエクスプローラーで開く。エージェントはこのフォルダを読み書きできない">設定フォルダを開く</button> <span class="muted" id="configDir"></span></div>
+  <div><button id="runDiag" title="各エージェントの CLI を --version で起動し、見つかるか・起動できるかを確かめる（押したときだけ実行する）">診断</button> <span class="muted" id="diagNote"></span>
+    <ul id="diagList"></ul></div>
+  <div class="actions"><button id="closeSettings">閉じる</button></div>
+</dialog>
+<!-- 送信前の秘密情報の警告（案1）。見つけた値そのものは表示しない -->
+<dialog id="secretWarn">
+  <form method="dialog">
+    <h2>秘密情報が含まれている可能性があります</h2>
+    <p>入力に次の形式の文字列が見つかりました。送信すると全エージェントに渡り、チャットログにも保存されます。</p>
+    <ul id="secretKinds"></ul>
+    <p class="muted">判定は既知の形式だけです。見つからなくても安全とは限りません。</p>
+    <div class="actions"><button value="edit" autofocus>戻って編集</button><button value="send">このまま送信</button></div>
+  </form>
+</dialog>
+
+<div id="viewbar"><label title="人間の発言、@human 宛ての発言、実行できるコマンドを含む発言、実行結果、システムの通知だけを表示する"><input type="checkbox" id="hideMinor"> @human 宛て以外を隠す</label> <span id="hiddenCount"></span></div>
+<div id="inbox" role="button" tabindex="0" title="あなたへの依頼の一覧を開く・閉じる"></div>
+<div id="inboxPanel" hidden>
+  <div class="ipbar"><strong>あなたへの依頼（済みにしていないもの）</strong>
+    <button id="askSummary" title="「人間へのお願い（未処理）と完了したことを、1つの発言にまとめてください」と進行役に頼む">進行役にまとめを頼む</button>
+    <button id="inboxClose">閉じる</button></div>
+  <div id="inboxList"></div>
+  <div class="ipbar"><strong>実行待ちのコマンド（期限内でまだ実行していないもの）</strong></div>
+  <div id="cmdList"></div>
+</div>
+<div id="banner">
+  <span id="mode"></span>
+  <span id="round"></span>
+  <span class="topic" id="topic"></span>
+</div>
+
+<main id="log">
+  <div class="inner" id="list"></div>
+  <div class="inner" id="logs"></div>
+</main>
+
+<footer>
+  <div class="inner">
+    <div class="quick">宛先:
+      <span id="mentionButtons"></span>
+      <span>（宛先なし＝全員が同時に回答。AIが @名前 で呼ぶと、呼ばれたAIが続けて発言します）</span>
+    </div>
+    <div id="replyBar"><span id="replyText"></span><button id="replyCancel" title="返信をやめる">×</button></div>
+    <div class="row">
+      <textarea id="input" rows="2" placeholder="メッセージ（Enterで送信 / Shift+Enterで改行）。会話が進んでいないときは、「設定」の「進め方」で始める"></textarea>
+      <div class="actions">
+        <button id="send" class="primary" title="フリートーク・順番に発言の最中はその会話に加わる。進んでいないときは、「設定」の「進め方」で選んだ方法で始める（入力はお題になる）">送信</button>
+      </div>
+    </div>
+  </div>
+</footer>
+</div>
+<div id="toast"></div>
+
+<script src="i18n.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+let agents = [];
+let status = {};
+const colorOf = (id) => (agents.find((a) => a.id === id) || {}).color || 'var(--muted)';
+const nameOf = (id) => id === 'human' ? t('あなた') : id === 'system' ? 'system' : (agents.find((a) => a.id === id) || {}).name || id;
+
+// ---- API ----
+async function api(method, path, body) {
+  try {
+    const opt = { method, headers: { 'Content-Type': 'application/json' } };
+    if (method !== 'GET') opt.body = JSON.stringify(body || {});
+    const res = await fetch(path, opt);
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(`${j.error_code || res.status}: ${j.message || ''}`);
+      console.error('api error', { path, status: res.status, request_id: res.headers.get('X-Request-Id'), ...j });
+      return undefined;
+    }
+    return j.data;
+  } catch (e) {
+    toast(t('サーバーに接続できません'));
+  }
+}
+function toast(t) {
+  const el = $('#toast'); el.textContent = t; el.style.display = 'block';
+  // 設定ダイアログはページより手前（トップレイヤー）に出るので、開いている間は通知をダイアログの中に移して隠れないようにする
+  const dlg = $('#settings');
+  const host = dlg.open ? dlg : document.body;
+  if (el.parentNode !== host) host.appendChild(el);
+  clearTimeout(toast.t); toast.t = setTimeout(() => (el.style.display = 'none'), 4000);
+}
+
+// ---- 描画（最低限のMarkdown: コードブロック / インラインコード / 太字 / @メンション） ----
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/@([A-Za-z][\w-]*)/g, (m, id) => {
+      const a = agents.find((x) => x.id === id.toLowerCase());
+      return `<span class="mention" style="color:${a ? a.color : 'inherit'}">${m}</span>`;
+    });
+}
+// コードブロックの切り出しは Go 側（codeblock.go）と同じ規則。m を渡すと、シェルのブロックに［実行］を付ける（案 7.1）
+function render(text, m) {
+  const out = [];
+  const parts = text.split(/```([^\n]*)\n?([\s\S]*?)```/g); // [本文, 言語, コード, 本文, …]
+  for (let i = 0; i < parts.length; i += 3) {
+    for (const para of parts[i].split(/\n{2,}/)) {
+      if (para.trim()) out.push(`<p>${inline(para.trim()).replace(/\n/g, '<br>')}</p>`);
+    }
+    if (i + 2 >= parts.length) break;
+    const code = parts[i + 2].replace(/\n$/, '');
+    out.push(`<pre><code>${esc(code)}</code></pre>`);
+    if (m) out.push(cmdBar(m, i / 3, parts[i + 1].trim().toLowerCase(), code));
+  }
+  return out.join('');
+}
+
+// ---- コードブロックの実行（案 7.1） ----
+// ボタンは Go 側が保存時に切り出した m.blocks を元に付け、実行 API には発言IDとブロック番号だけを送る。
+// 画面で数えたブロックと m.blocks の中身が一致しないときは、別のブロックを実行しないようにボタンを出さない。
+const SHELL_LANGS = ['powershell', 'pwsh', 'ps1', 'cmd', 'bat', 'batch', 'bash', 'sh']; // codeblock.go の shellOf と同じ
+const DANGER_RE = /\b(delete|remove-item|rm|rmdir|del|drop|terminate|destroy|update-function-code|iam)\b|--force\b/i;
+const CMD_TTL_MS = 60 * 60 * 1000; // 発言から1時間を過ぎたブロックはサーバが実行を断る（BLOCK_EXPIRED）
+function cmdBar(m, n, lang, code) {
+  const b = (m.blocks || [])[n];
+  if (!b || !SHELL_LANGS.includes(String(b.lang).toLowerCase()) || String(b.code).replace(/\n$/, '') !== code) return '';
+  if (m.from === 'human' || m.kind === 'system') return '';
+  const leader = m.from === status.leader;
+  if (!leader && status.command_leader_only) return ''; // 設定「進行役の発言だけ」（サーバ側でも断る）
+  // 保護するパス（AI Agent Room の設定、許可ルールなど）に触れるブロックと、禁止ルールを渡せないエージェントのブロックは、
+  // 進行役の発言でも実行前に必ず確認する。判定はサーバ（protect.go）が行う
+  const guarded = b.protected === true;
+  const agent = agents.find((a) => a.id === m.from);
+  const unenforced = !agent || agent.enforced !== true;
+  const danger = guarded || DANGER_RE.test(code);
+  const expired = Date.now() - m.ts > CMD_TTL_MS;
+  const noShell = ['cmd', 'bat', 'batch'].includes(String(b.lang).toLowerCase()) && status.os && status.os !== 'windows';
+  return `<div class="cmd${danger ? ' danger' : ''}" data-msg="${m.id}" data-block="${n}" data-from="${esc(m.from)}" data-force="${guarded || unenforced ? 1 : 0}" data-ts="${m.ts}"${noShell ? ' data-noshell="1"' : ''} data-line="${esc(code.split('\n').map((l) => l.trim()).find(Boolean) || '')}">
+    <div class="cmdbar">
+      <button class="run primary" data-cmd="run"${noShell ? ` disabled title="${esc(t('cmd・bat のブロックは、この OS では実行できません'))}"` : expired ? ` disabled title="${esc(t('発言から1時間を過ぎたので実行できません'))}"` : ''}>▶ ${esc(t('実行'))}</button>
+      <button class="cancel" data-cmd="cancel" hidden>■ ${esc(t('中止'))}</button>
+      <label title="${esc(t('コマンドを実行するフォルダ。既定は会話の作業ディレクトリ'))}">${esc(t('作業フォルダ'))} <input class="cwd" spellcheck="false" placeholder="${esc(status.workdir || '')}"></label>
+      <label title="${esc(t('実行を打ち切るまでの時間（最大120分）'))}">${esc(t('時間制限'))} <input class="timeout" type="number" min="1" max="120" value="10">${esc(t('分'))}</label>
+      <label title="${esc(t('結果をチャットに投稿しない（エージェントに渡さない）。全文ログも作業ディレクトリの外に置く'))}"><input type="checkbox" class="private"> ${esc(t('結果をチャットに出さない'))}</label>
+      <label title="${esc(t('出力の全文をファイルに残さない。秘密が出るコマンドに使う'))}"><input type="checkbox" class="nolog"> ${esc(t('全文ログを残さない'))}</label>
+      <span class="cmdstate"></span>
+    </div>
+    <div class="muted cmdnote">${esc(guarded ? t('⚠ AI Agent Room の設定や許可ルールなど、保護しているファイルに触れるコマンドです。') : danger ? t('⚠ 削除や本番の更新を含む可能性があります。') : '')}${esc(t('エージェントの権限の外で、あなたの権限で実行されます。'))}${esc(unenforced ? t('（このエージェントには禁止ルールを渡せないため、実行前に必ず確認します）') : '')}</div>
+    <pre class="cmdout" hidden></pre>
+  </div>`;
+}
+const cmdKey = (id, n) => `${id}:${n}`;
+const cmdStates = new Map(); // 「発言ID:ブロック番号」→ 実行状態（サーバから届いたもの）
+function cmdBox(id, n) { return document.querySelector(`#list .cmd[data-msg="${id}"][data-block="${n}"]`); }
+// applyCmdState はサーバから届いた実行状態をブロックの下に出す。
+// 状態: running（実行中）, done（終了）, failed（起動できない等）, canceled（中止）, timeout（時間切れ）, interrupted（「新しい会話」で止めた）
+function applyCmdState(c) {
+  cmdStates.set(cmdKey(c.msg_id, c.block), c);
+  updateInbox(); // 実行したブロックは「実行待ち」から外す
+  const box = cmdBox(c.msg_id, c.block);
+  if (!box) return;
+  const running = c.state === 'running';
+  box.querySelector('[data-cmd="run"]').disabled = true; // 承認は1回かぎり。再実行は新しい発言で
+  box.querySelector('[data-cmd="cancel"]').hidden = !running;
+  for (const el of box.querySelectorAll('input')) el.disabled = true;
+  const label = { running: t('実行中'), done: t('終了（終了コード {0}）', c.exit_code), failed: t('失敗'), canceled: t('中止しました'), timeout: t('時間切れで止めました'), interrupted: t('中断') }[c.state] || c.state;
+  box.querySelector('.cmdstate').textContent = label + (c.error ? ` — ${c.error}` : '');
+  box.classList.toggle('ok', c.state === 'done' && c.exit_code === 0);
+  box.classList.toggle('ng', (c.state === 'done' && c.exit_code !== 0) || ['failed', 'canceled', 'timeout', 'interrupted'].includes(c.state));
+  const out = box.querySelector('.cmdout');
+  out.hidden = !c.tail;
+  out.textContent = c.tail || '';
+}
+async function runCmd(box) {
+  const id = Number(box.dataset.msg), n = Number(box.dataset.block), from = box.dataset.from;
+  const confirmed = from !== status.leader || box.dataset.force === '1';
+  const warn = box.classList.contains('danger') ? t('⚠ 保護しているファイルや削除・本番の更新に触れる可能性があります。') + '\n' : '';
+  if (confirmed && !confirm(warn + t('{0} の発言にあるコマンドを、あなたの権限で実行します。内容を確認しましたか？', nameOf(from)))) return;
+  const run = box.querySelector('[data-cmd="run"]');
+  run.disabled = true; // 二重送信を防ぐ。失敗したら戻す
+  const res = await api('POST', `/api/messages/${id}/blocks/${n}/run`, {
+    cwd: box.querySelector('.cwd').value.trim(), confirm: confirmed, private: box.querySelector('.private').checked,
+    no_log: box.querySelector('.nolog').checked, timeout_min: Number(box.querySelector('.timeout').value) || 10,
+  });
+  if (res === undefined) { run.disabled = false; return; }
+  if (res && res.msg_id) applyCmdState(res);
+}
+$('#list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cmd]');
+  const box = b && b.closest('.cmd');
+  if (!box) return;
+  if (b.dataset.cmd === 'run') runCmd(box);
+  else if (b.dataset.cmd === 'cancel') api('POST', `/api/messages/${box.dataset.msg}/blocks/${box.dataset.block}/cancel`);
+});
+
+// ---- あなたへ（@human 宛ての発言。案 7.2 の第一段階） ----
+// 画面に見えたら「確認済み」、［済み］を押したら「済み」。どちらもブラウザに保存し、サーバには送らない。
+// 発言IDは会話ごとに振り直されるので、発言時刻と組にして見分ける
+const HUMAN_KEY = 'ai_agent_room.human';
+const HUMAN_MAX = 500; // 保存する件数の上限（古いものから捨てる）
+const HUMAN_CMD_RE = /```[ \t]*(powershell|pwsh|ps1|cmd|bat|batch|bash|sh)\b/i;
+const humanKey = (m) => `${m.id}@${m.ts}`;
+const humanState = (() => {
+  try { const v = JSON.parse(localStorage.getItem(HUMAN_KEY)) || {}; return { seen: new Set(v.seen || []), done: new Set(v.done || []) }; }
+  catch { return { seen: new Set(), done: new Set() }; }
+})();
+function saveHuman() {
+  const trim = (set) => [...set].slice(-HUMAN_MAX);
+  try { localStorage.setItem(HUMAN_KEY, JSON.stringify({ seen: trim(humanState.seen), done: trim(humanState.done) })); } catch (e) { console.warn('human.save', e); }
+}
+const isForHuman = (m) => m.from !== 'human' && m.from !== 'system' && m.kind === 'chat' && /@human\b/i.test(m.text);
+// 見えたかどうか: 発言の半分以上、または画面の半分以上を占めたら見えたとする（画面より長い発言のため）
+const humanObserver = new IntersectionObserver((entries) => {
+  if (document.visibilityState !== 'visible') return; // 裏に回っている間は見えたことにしない
+  let changed = false;
+  for (const e of entries) {
+    if (!e.isIntersecting || (e.intersectionRatio < 0.5 && e.intersectionRect.height < e.rootBounds.height / 2)) continue;
+    humanState.seen.add(e.target.dataset.hkey);
+    e.target.classList.add('seen');
+    humanObserver.unobserve(e.target);
+    changed = true;
+  }
+  if (changed) { saveHuman(); updateInbox(); }
+}, { root: $('#log'), threshold: [0, 0.25, 0.5, 0.75, 1] });
+function observeHuman(el) {
+  if (humanState.seen.has(el.dataset.hkey)) el.classList.add('seen');
+  else humanObserver.observe(el);
+}
+// 戻ってきたら、まだ見ていない発言を見直す（observe し直すと、今の位置で判定される）
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  for (const el of document.querySelectorAll('#list .msg.tohuman:not(.seen)')) { humanObserver.unobserve(el); humanObserver.observe(el); }
+});
+const humanEls = () => [...document.querySelectorAll('#list .msg.tohuman')];
+const humanMsgs = new Map(); // hkey → 発言（受信箱の一覧用）
+const humanOpen = (k) => !humanState.done.has(k);
+const humanUnseen = (k) => !humanState.seen.has(k) && !humanState.done.has(k);
+function updateInbox() {
+  const els = humanEls();
+  const unseen = els.filter((el) => humanUnseen(el.dataset.hkey)).length;
+  const open = els.filter((el) => humanOpen(el.dataset.hkey)).length;
+  const pending = pendingCmdBoxes().length;
+  const bar = $('#inbox');
+  bar.classList.toggle('show', open > 0 || pending > 0);
+  bar.dataset.unseen = unseen;
+  bar.dataset.open = open;
+  if (!replaying && open > lastInboxOpen) notifyBackground('inbox', t('あなたへの依頼が {0}件あります', open));
+  lastInboxOpen = open;
+  bar.dataset.pending = pending;
+  bar.textContent = '📥 ' + t('あなたへ: 未確認 {0}件 · 済みにしていないもの {1}件（押すと一覧を開く）', unseen, open) +
+    (pending ? ' · ' + t('実行待ちのコマンド {0}件', pending) : '');
+  if (!$('#inboxPanel').hidden) renderInbox();
+}
+// 実行待ちのコマンド（案11）: 画面に［実行］ボタンがあり、まだ実行しておらず、期限内のブロック。発言の古い順
+function pendingCmdBoxes() {
+  return [...document.querySelectorAll('#list .cmd')].filter((b) =>
+    !cmdStates.has(cmdKey(b.dataset.msg, b.dataset.block)) && Date.now() - Number(b.dataset.ts) <= CMD_TTL_MS && !b.dataset.noshell);
+}
+function renderPendingCmds() {
+  const boxes = pendingCmdBoxes();
+  $('#cmdList').innerHTML = boxes.length ? boxes.map((b) => {
+    const time = new Date(Number(b.dataset.ts)).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const line = b.dataset.line.length > 90 ? b.dataset.line.slice(0, 90) + '…' : b.dataset.line;
+    return `<div class="iitem" data-msg="${esc(b.dataset.msg)}" data-block="${esc(b.dataset.block)}" style="--c:${esc(colorOf(b.dataset.from))}">
+      <span class="iwho">${esc(nameOf(b.dataset.from))}</span><span class="badge">${esc(t('ブロック{0}', Number(b.dataset.block) + 1))}</span>
+      <code class="itext" data-cjump title="${esc(t('このブロックへ移る'))}">${esc(line)}</code>
+      <span class="muted">#${esc(b.dataset.msg)} ${esc(time)}</span>
+      <button data-crun>▶ ${esc(t('実行'))}</button></div>`;
+  }).join('') : `<p class="muted">${esc(t('実行待ちのコマンドはありません。'))}</p>`;
+}
+// 受信箱の一覧: 済みにしていない @human 宛ての発言を古い順に並べる。未確認のものは太字にする
+function inboxLine(text) {
+  const body = text.replace(/```[\s\S]*?```/g, ' ').replace(/@human\b/gi, '').split('\n').map((l) => l.trim()).find(Boolean) || '';
+  return body.length > 90 ? body.slice(0, 90) + '…' : body;
+}
+function renderInbox() {
+  const items = humanEls().filter((el) => humanOpen(el.dataset.hkey)).map((el) => humanMsgs.get(el.dataset.hkey)).filter(Boolean);
+  $('#inboxList').innerHTML = items.length ? items.map((m) => {
+    const k = humanKey(m);
+    const kind = HUMAN_CMD_RE.test(m.text) ? t('コマンド') : t('確認');
+    const time = new Date(m.ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="iitem${humanUnseen(k) ? ' unseen' : ''}" data-hkey="${esc(k)}" style="--c:${esc(colorOf(m.from))}">
+      <span class="iwho">${esc(m.name || nameOf(m.from))}</span><span class="badge">${esc(kind)}</span>
+      <span class="itext" data-ijump title="${esc(t('この発言へ移る'))}">${esc(inboxLine(m.text))}</span>
+      <span class="muted">#${m.id} ${esc(time)}</span>
+      <button data-idone>${esc(t('✓ 済み'))}</button></div>`;
+  }).join('') : `<p class="muted">${esc(t('済みにしていない依頼はありません。'))}</p>`;
+  renderPendingCmds();
+}
+function toggleInbox(open) {
+  const panel = $('#inboxPanel');
+  panel.hidden = open === undefined ? !panel.hidden : !open;
+  if (!panel.hidden) renderInbox();
+}
+function jumpTo(el) {
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1500);
+}
+$('#inbox').onclick = () => toggleInbox();
+$('#inbox').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInbox(); } });
+$('#inboxClose').onclick = () => toggleInbox(false);
+$('#inboxList').addEventListener('click', (e) => {
+  const item = e.target.closest('.iitem');
+  const el = item && [...humanEls()].find((x) => x.dataset.hkey === item.dataset.hkey);
+  if (!el) return;
+  if (e.target.closest('[data-idone]')) toggleHumanDone(el);
+  else if (e.target.closest('[data-ijump]')) jumpTo(el);
+});
+// 実行待ちの［実行］は、ブロックの下の［実行］と同じ処理（確認・保護パスの警告・期限切れはサーバも判定）を通す
+$('#cmdList').addEventListener('click', (e) => {
+  const item = e.target.closest('.iitem');
+  const box = item && cmdBox(item.dataset.msg, item.dataset.block);
+  if (!box) return;
+  if (e.target.closest('[data-crun]')) { if (!box.querySelector('[data-cmd="run"]').disabled) runCmd(box); } // 送信中の二度押しを防ぐ
+  else if (e.target.closest('[data-cjump]')) jumpTo(box);
+});
+setInterval(updateInbox, 60 * 1000); // 1時間を過ぎたブロックを「実行待ち」から外す
+// 進行役にまとめを頼む: 人間の発言として投稿する（まとめるのは進行役）
+$('#askSummary').onclick = async () => {
+  const text = (status.leader ? `@${status.leader} ` : '') + '人間へのお願い（未処理）と完了したことを、1つの発言にまとめてください。';
+  if (await api('POST', '/api/messages', { text }) !== undefined) toggleInbox(false);
+};
+function toggleHumanDone(el) {
+  const k = el.dataset.hkey;
+  if (humanState.done.has(k)) humanState.done.delete(k); else { humanState.done.add(k); humanState.seen.add(k); el.classList.add('seen'); humanObserver.unobserve(el); }
+  const done = humanState.done.has(k);
+  el.classList.toggle('done', done);
+  el.querySelector('[data-todo]').textContent = done ? t('↺ 未完了に戻す') : t('✓ 済み');
+  saveHuman();
+  updateInbox();
+}
+
+// ---- @human 宛て以外を隠す ----
+// 残すのは、人間の発言、@human 宛て、実行できるコマンドを含む発言、実行結果、システムの通知。それ以外のエージェントの発言を隠す
+const isMinor = (m) => !(m.from === 'human' || m.from === 'system' || m.kind === 'system' || m.kind === 'command_result' || isForHuman(m) || HUMAN_CMD_RE.test(m.text));
+function updateHidden() {
+  const on = $('#hideMinor').checked;
+  document.body.classList.toggle('hide-minor', on);
+  const n = on ? document.querySelectorAll('#list .msg.minor').length : 0;
+  $('#hiddenCount').textContent = n ? t('非表示 {0}件', n) : '';
+}
+$('#hideMinor').onchange = (e) => {
+  saveSetting('hide_minor', e.target.checked);
+  const log = $('#log');
+  updateHidden();
+  log.scrollTop = log.scrollHeight; // 切り替えたら最新の発言を見せる
+};
+
+function messageEl(m, withDate) {
+  const el = document.createElement('div');
+  el.className = `msg ${m.from === 'human' ? 'human' : m.kind === 'system' ? 'system' : m.kind === 'pass' ? 'pass' : m.kind === 'command_result' ? 'agent result' : 'agent'}`;
+  el.style.setProperty('--c', colorOf(m.from));
+  const d = new Date(m.ts);
+  const time = withDate ? (m.time || d.toLocaleString('ja-JP')) : d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // #番号は発言ID。エージェントの返答には、書き始めた時点で読んでいた最後の発言IDを添える（行き違いの見分け用）
+  const meta = ['#' + m.id, time, m.model, m.read_upto ? t('#{0} まで読了', m.read_upto) : ''].filter(Boolean).map(esc).join(' · ');
+  const who = m.kind === 'system' ? '' : `<div class="who">${esc(m.name && m.from !== 'human' ? m.name : nameOf(m.from))}<span class="meta">${meta}</span></div>`;
+  let body = m.kind === 'system' ? esc(m.text) : render(m.text, withDate ? null : m); // 過去ログには［実行］を出さない
+  // 失敗したターンは、同じ新着を渡し直してもう一度起動できる（案 8.3）。過去ログには出さない
+  if (!withDate && m.retry) {
+    body += ` <button class="retry" data-retry="${esc(m.retry)}" title="${esc(t('同じ新着を渡して、このエージェントをもう一度起動する'))}">${esc(t('↻ 再試行'))}</button>`;
+  }
+  // 返信（案 8）: 返信先の発言の先頭を添え、クリックでその発言へ移る。チャットの発言には「返信」ボタンを付ける
+  const ref = m.reply_to ? `<div class="reply-ref" data-ref="${m.reply_to}">${esc(replyLabel(m.reply_to))}</div>` : '';
+  const replyBtn = !withDate && m.kind !== 'system' ? `<button class="reply" data-reply="${m.id}" title="${esc(t('この発言に返信'))}">↩ ${esc(t('返信'))}</button>` : '';
+  // @human 宛ての発言は枠で囲み、依頼の種類のバッジを付ける。チャットでは［済み］で片付けられる
+  let badge = '';
+  if (isForHuman(m)) {
+    const k = humanKey(m), done = humanState.done.has(k);
+    el.classList.add('tohuman');
+    el.classList.toggle('done', done);
+    badge = `<span class="badge">${esc(t(HUMAN_CMD_RE.test(m.text) ? 'あなたへ: 実行してほしいコマンド' : 'あなたへ: 確認・判断のお願い'))}</span>`;
+    if (!withDate) {
+      el.dataset.hkey = k;
+      humanMsgs.set(k, m);
+      badge += `<button class="todo" data-todo title="${esc(t('この依頼を片付けたら押す（ブラウザに保存）'))}">${esc(done ? t('↺ 未完了に戻す') : t('✓ 済み'))}</button>`;
+    }
+  }
+  if (isMinor(m)) el.classList.add('minor');
+  el.innerHTML = `${ref}${who.replace('</div>', badge + replyBtn + '</div>')}<div class="body">${body}</div>`;
+  if (!withDate) { el.id = 'msg-' + m.id; msgTexts.set(m.id, `${nameOf(m.from)}: ${m.text}`); }
+  return el;
+}
+
+// ---- 返信（案 8） ----
+const msgTexts = new Map(); // 発言ID → 「名前: 本文」（返信先の表示用）
+let replyTo = 0;
+function replyLabel(id) {
+  const s = msgTexts.get(id);
+  return t('↩ #{0} への返信', id) + (s ? ' — ' + s.replace(/\s+/g, ' ').slice(0, 80) : '');
+}
+function setReply(id) {
+  replyTo = id;
+  $('#replyBar').classList.toggle('on', id > 0);
+  $('#replyText').textContent = id ? replyLabel(id) : '';
+  if (id) $('#input').focus();
+}
+$('#replyCancel').onclick = () => setReply(0);
+$('#list').addEventListener('click', (e) => {
+  const rt = e.target.closest('[data-retry]');
+  if (rt) { // 失敗したターンをもう一度（案 8.3）
+    rt.disabled = true;
+    api('POST', '/api/agents/' + encodeURIComponent(rt.dataset.retry) + '/retry').then((res) => { if (res === undefined) rt.disabled = false; });
+    return;
+  }
+  const b = e.target.closest('[data-reply]');
+  if (b) { setReply(Number(b.dataset.reply)); return; }
+  const todo = e.target.closest('[data-todo]');
+  if (todo) { toggleHumanDone(todo.closest('.msg')); return; }
+  const r = e.target.closest('[data-ref]');
+  const el = r && document.getElementById('msg-' + r.dataset.ref);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 1500);
+  }
+});
+
+function addMessage(m) {
+  const log = $('#log');
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  const el = messageEl(m);
+  $('#list').insertBefore(el, $('#waiting'));
+  if (el.dataset.hkey) { observeHuman(el); updateInbox(); }
+  if (el.classList.contains('minor')) updateHidden(); // 隠れた発言は高さを持たないので、自動スクロールも動かない
+  for (const n of (m.blocks || []).keys()) { const c = cmdStates.get(cmdKey(m.id, n)); if (c) applyCmdState(c); }
+  if (el.querySelector('.cmd')) updateInbox(); // 実行待ちのコマンドが増えた
+  if (atBottom || m.from === 'human') log.scrollTop = log.scrollHeight;
+}
+// 書きかけの本文（案5）: エージェントごとに仮の吹き出しを1つ出す。会話には入らず、返信・実行・受信箱の対象にもしない。
+// 本文は整形せずそのまま出す。確定した発言・ターンの終了（空の本文）・「新しい会話」で消える
+const partialEls = new Map();
+function showPartial(p) {
+  let el = partialEls.get(p.agent);
+  const text = (p.text || '').replace(/^\s*\[pass\]\s*/i, ''); // パスの目印は見せない
+  if (!text.trim()) {
+    if (el) el.remove();
+    partialEls.delete(p.agent);
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'msg agent partial';
+    el.style.setProperty('--c', colorOf(p.agent));
+    el.innerHTML = `<div class="who"><span class="pname"></span><span class="meta">${esc(t('書いています…'))}</span></div><div class="body"></div>`;
+    el.querySelector('.pname').textContent = nameOf(p.agent);
+    partialEls.set(p.agent, el);
+  }
+  const log = $('#log');
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  el.querySelector('.body').textContent = text;
+  $('#list').insertBefore(el, $('#waiting'));
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+function clearList() {
+  partialEls.clear();
+  $('#list').innerHTML = '<div id="waiting"></div>';
+  msgTexts.clear();
+  cmdStates.clear();
+  humanObserver.disconnect();
+  humanMsgs.clear();
+  updateInbox();
+  updateHidden();
+}
+
+// ---- 設定の保存（Webストレージ） ----
+// 進め方・周回はこの画面だけの設定なので、Webストレージに保存して読み込み時に戻す。
+// 間隔・上限・セッション切替・進行役はサーバが logs/settings.json に保存する（案 7）。
+const SETTINGS_KEY = 'ai_agent_room.settings';
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; }
+}
+function saveSetting(key, value) {
+  const saved = loadSettings();
+  saved[key] = value;
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(saved)); } catch (e) { console.warn('settings.save', e); }
+}
+
+function renderStatus(s) {
+  status = s;
+  agents = s.agents;
+  (s.commands || []).forEach(applyCmdState); // つなぎ直したときも、実行中・実行済みの状態を戻す
+  for (const el of document.querySelectorAll('#list .cmd input.cwd')) el.placeholder = s.workdir; // 空欄なら作業ディレクトリで実行
+  $('#workdir').textContent = t('作業ディレクトリ: {0}', s.workdir);
+  if (document.activeElement !== $('#workdirInput')) $('#workdirInput').value = s.workdir;
+  if (document.activeElement !== $('#maxHops')) $('#maxHops').value = s.max_hops;
+  if (document.activeElement !== $('#delay')) $('#delay').value = s.delay_sec;
+  if (document.activeElement !== $('#rotateTokens')) $('#rotateTokens').value = s.rotate_tokens;
+  if (document.activeElement !== $('#turnTimeout')) $('#turnTimeout').value = Math.round((s.turn_timeout_sec || 0) / 60);
+  if (document.activeElement !== $('#cmdAll')) $('#cmdAll').value = s.command_leader_only ? 'leader' : 'all';
+  if (document.activeElement !== $('#leader')) {
+    $('#leader').innerHTML = `<option value="">${t('なし')}</option>` + agents.filter((a) => (a.state !== 'unavailable' && !a.paused) || a.id === s.leader)
+      .map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+    $('#leader').value = s.leader || '';
+  }
+  // 設定ダイアログのエージェント一覧（追加したものだけ削除できる）
+  // 応答の上限はエージェントごとに上書きできる（空欄なら会話全体の設定。案 8.3）
+  if (!$('#agentList').contains(document.activeElement)) {
+    $('#agentList').innerHTML = agents.map((a) => `<div style="--c:${esc(a.color)}"><span class="dot"></span>${esc(a.name)} <span class="muted">@${esc(a.id)}${a.state === 'unavailable' ? t('（未インストール）') : ''}</span>` +
+      ` <label class="muted" title="${t('このエージェントだけの応答の上限（分）。空欄なら会話全体の設定に従う')}">${t('上限')} <input class="timeoutMin" type="number" min="1" max="60" data-timeout="${esc(a.id)}" value="${a.timeout_sec ? Math.round(a.timeout_sec / 60) : ''}" placeholder="${Math.round((s.turn_timeout_sec || 0) / 60)}">${t('分')}</label>` +
+      permissionControl(a) +
+      (a.removable ? ` <button data-remove="${esc(a.id)}">${t('削除')}</button>` : '') + '</div>').join('');
+  }
+  // 削除されたエージェントのチップを消す
+  for (const chip of [...$('#agents').children]) {
+    if (!agents.some((a) => 'chip-' + a.id === chip.id)) chip.remove();
+  }
+  // チップは一度だけ作り、以降は中身だけ更新する（モデル選択のプルダウンが開いたまま保たれるように）
+  for (const a of agents) {
+    let chip = document.getElementById('chip-' + a.id);
+    if (!chip) {
+      chip = document.createElement('span');
+      chip.id = 'chip-' + a.id;
+      chip.style.setProperty('--c', a.color);
+      chip.innerHTML = `<span class="dot"></span>${esc(a.name)}
+        <button class="liveBtn" data-live="${esc(a.id)}" data-name="${esc(a.name)}" title="${t('CLI の出力をストリーミングで見る（別窓）')}">${t('出力')}</button>
+        <button class="intBtn" data-interactive="${esc(a.id)}" hidden title="${t('CLI を対話モードで新しい窓に開く（ログイン・認証など）。窓を閉じるまで会話に参加しない')}">${t('対話')}</button>
+        <select class="model" data-agent="${esc(a.id)}" title="${t('モデル（次の発言から反映）')}"></select>
+        <span class="st state"></span>
+        <span class="st usage"></span>`;
+      $('#agents').appendChild(chip);
+    }
+    const usage = usageText(a);
+    chip.querySelector('.usage').textContent = usage.line;
+    chip.querySelector('.usage').title = usage.detail;
+    const ib = chip.querySelector('.intBtn'); // 対話モード（案9）: 窓を開ける環境・CLI だけ出す
+    ib.hidden = !a.interactive_ok;
+    ib.dataset.end = a.interactive_manual ? '1' : '';
+    ib.textContent = a.interactive_manual ? t('対話を終了') : t('対話');
+    ib.disabled = a.interactive_manual ? false : a.interactive || a.state === 'thinking';
+    chip.className = `chip ${a.state}${a.paused ? ' paused' : ''}`;
+    chip.title = [a.model ? t('直近の発言のモデル: {0}', a.model) : '', a.quota ? t('プランの残り利用枠: {0}', a.quota) : ''].filter(Boolean).join('\n');
+    // 考え中は、実行中のツール（途中経過）があれば添える。ファイルに書き込んだら「作業中」にして、書き込んだファイルを添える
+    const editing = (a.editing || []).join(', ');
+    chip.querySelector('.state').innerHTML = a.state === 'thinking' ? `${editing ? `${t('作業中')} <span class="activity" title="${esc(editing)}">${esc(editing)}</span>` : t('考え中')} <span data-since="${a.since}"></span>${a.activity ? ` · <span class="activity" title="${esc(a.activity)}">${esc(a.activity)}</span>` : ''}`
+      : a.interactive ? t('対話中（窓を閉じると戻ります）')
+      : a.paused ? t('一時停止中')
+      : a.state === 'waiting' ? `${t('様子見')} <span data-until="${a.wait_until}"></span>`
+      : a.state === 'listening' ? t('聞いている')
+      : a.state === 'unavailable' ? t('未インストール') : a.has_session ? t('待機') : t('未参加');
+    const sel = chip.querySelector('select');
+    sel.disabled = a.state === 'unavailable';
+    fillModelSelect(sel, a);
+  }
+  $('#mentionButtons').innerHTML = [...agents.filter((a) => a.state !== 'unavailable' && !a.paused && !a.interactive).map((a) => a.id), 'all']
+    .map((id) => `<button data-mention="${id}">@${id}</button>`).join(' ');
+
+  const d = s.discussion;
+  const f = s.free_talk;
+  $('#banner').classList.toggle('show', !!(d || f));
+  if (d) {
+    $('#mode').textContent = t('ディスカッション中');
+    $('#round').textContent = t('第{0}周 / {1}周・次: {2}', d.round, d.max_rounds, nameOf(d.next));
+    $('#topic').textContent = t('お題: {0}', d.topic);
+    $('#topic').title = d.topic;
+  } else if (f) {
+    $('#mode').textContent = t('フリートーク中');
+    $('#round').textContent = t('AIの発言 {0} / {1}（人間が発言するとリセット）', s.hops, s.max_hops);
+    $('#topic').textContent = f.topic ? t('お題: {0}', f.topic) : '';
+    $('#topic').title = f.topic || '';
+  }
+  tick();
+}
+
+// ---- モデル選択 ----
+// トークン使用量（案15）: 1行は概数、ツールチップは正確な値。取得できなかった実行は0と見間違えないよう回数を出す。金額は出さない
+const fmtTokens = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+function usageText(a) {
+  const u = a.usage;
+  if (!u) return { line: '', detail: '' };
+  const unknown = u.unknown_jobs ? t('取得できず {0}回', u.unknown_jobs) : '';
+  if (u.jobs === u.unknown_jobs) return { line: t('使用量: 不明') + ' · ' + unknown, detail: unknown };
+  const last = a.last_input ? t('直近 {0}', fmtTokens(a.last_input)) + ' · ' : '';
+  const line = last + t('累計 入力 {0}（キャッシュ {1}）/ 出力 {2}', fmtTokens(u.input), fmtTokens(u.cached_input), fmtTokens(u.output)) + (unknown ? ' · ' + unknown : '');
+  const n = (v) => Number(v).toLocaleString();
+  const detail = [
+    a.last_input ? t('直近1回の実行の入力: {0} トークン', n(a.last_input)) : '',
+    t('{0}回の実行で 入力 {1}（うちキャッシュ {2}）/ 出力 {3} トークン', n(u.jobs), n(u.input), n(u.cached_input), n(u.output)),
+    unknown ? t('使用量を取得できなかった実行: {0}回（累計に含まない）', u.unknown_jobs) : '',
+    u.updated ? t('更新: {0}', u.updated) : '',
+  ].filter(Boolean).join('\n');
+  return { line, detail };
+}
+// 「一時停止」はモデル選択の特別な値。選ぶと一時停止、モデル（既定を含む）を選び直すと再開する
+const PAUSED = '__paused__';
+let models = {}; // エージェントID → [{id, label}]
+function fillModelSelect(sel, a) {
+  if (document.activeElement === sel) return; // 操作中は触らない
+  const list = [...(models[a.id] || [])];
+  if (a.model_sel && !list.some((m) => m.id === a.model_sel)) list.push({ id: a.model_sel, label: a.model_sel });
+  const html = `<option value="">${t('既定')}${a.model && !a.model_sel ? '（' + esc(a.model) + '）' : ''}</option>` +
+    list.map((m) => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('') +
+    `<option value="${PAUSED}">${t('一時停止')}</option>`;
+  if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+  sel.value = a.paused ? PAUSED : (a.model_sel || '');
+}
+async function loadModels() {
+  const m = await api('GET', '/api/models');
+  if (!m) return;
+  models = m;
+  if (status.agents) renderStatus(status);
+  // agy のモデル一覧は起動直後に取得中のことがあるので、空なら少し後に取り直す
+  if (Object.entries(models).some(([id, l]) => !(l && l.length) && agents.find((a) => a.id === id && a.state !== 'unavailable'))) {
+    setTimeout(loadModels, 5000);
+  }
+}
+// 「出力」: エージェントの CLI 出力を別窓で開く（エージェントごとに1つの窓を使い回す）
+// 「対話」: CLI を対話モードで新しい窓に開く（案9）。状態は status で戻ってくる
+$('#agents').addEventListener('click', (e) => {
+  const b = e.target.closest('button.intBtn');
+  if (!b) return;
+  b.disabled = true;
+  const end = b.dataset.end === '1'; // macOS・Linux の［対話を終了］
+  api(end ? 'DELETE' : 'POST', `/api/agents/${encodeURIComponent(b.dataset.interactive)}/interactive`).then((res) => { if (res === undefined) b.disabled = false; });
+});
+$('#agents').addEventListener('click', (e) => {
+  const b = e.target.closest('button.liveBtn');
+  if (!b) return;
+  const url = `/live.html?agent=${encodeURIComponent(b.dataset.live)}&name=${encodeURIComponent(b.dataset.name)}`;
+  const w = window.open(url, 'live-' + b.dataset.live, 'width=900,height=700');
+  if (w) w.focus();
+});
+$('#agents').addEventListener('change', async (e) => {
+  const sel = e.target.closest('select.model');
+  if (!sel) return;
+  const body = sel.value === PAUSED ? { paused: true } : { model: sel.value, paused: false };
+  await api('PUT', '/api/agents/' + encodeURIComponent(sel.dataset.agent), body);
+  sel.blur();
+});
+loadModels();
+
+// 考え中の経過秒数と、次のエージェント起動までの残り秒数を更新する
+function tick() {
+  for (const el of document.querySelectorAll('[data-since]')) {
+    el.textContent = t('{0}秒', Math.floor((Date.now() - Number(el.dataset.since)) / 1000));
+  }
+  for (const el of document.querySelectorAll('[data-until]')) {
+    el.textContent = t('{0}秒', Math.max(0, Math.ceil((Number(el.dataset.until) - Date.now()) / 1000)));
+  }
+  const w = status.waiting;
+  const el = $('#waiting');
+  if (!el) return;
+  if (w) {
+    const left = Math.max(0, Math.ceil((w.until - Date.now()) / 1000));
+    el.textContent = t('次: {0}（あと{1}秒）… 今のうちに発言すると、次の発言者に渡されます', w.agents.map(nameOf).join('・'), left);
+  } else {
+    el.textContent = '';
+  }
+}
+setInterval(tick, 250);
+
+// ---- 背面にあるときの通知（案7） ----
+// タブが見えていないときだけ、ブラウザの通知で知らせる。発言の本文・作業フォルダ・コマンドの出力は含めない。
+// 種類（turn / error / inbox）ごとに NOTIFY_GAP_MS のあいだは出し直さない。押すとこのタブに戻る
+const NOTIFY_GAP_MS = 30000;
+const notifyLast = {};
+let replaying = false, lastInboxOpen = 0;
+const notifyOn = () => loadSettings().notify === true && 'Notification' in window && Notification.permission === 'granted';
+function notifyBackground(kind, body) {
+  if (!notifyOn() || document.visibilityState === 'visible') return;
+  const now = Date.now();
+  if (now - (notifyLast[kind] || 0) < NOTIFY_GAP_MS) return;
+  notifyLast[kind] = now;
+  const n = new Notification('AI Agent Room', { body, tag: 'ai-agent-room-' + kind });
+  n.onclick = () => { window.focus(); n.close(); };
+}
+function notifyMessage(m) {
+  if (m.kind === 'chat' && m.from !== 'human' && m.from !== 'system') notifyBackground('turn', t('{0} が発言しました', m.name || m.from));
+  const err = m.from === 'system' && /\[(AGENT_[A-Z_]+)\]/.exec(m.text || ''); // 「<名前> [AGENT_…] 理由」の、コードだけを使う
+  if (err) notifyBackground('error', t('エージェントのエラー（{0}）', err[1]));
+}
+
+// ---- イベント受信 ----
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    // 接続のたびに snapshot の直後に状態が届く
+    if (ev.type === 'snapshot') { // 履歴が空だと null が届く
+      replaying = true; // 読み込み済みの発言では通知しない（案7）
+      clearList(); (ev.messages || []).forEach(addMessage);
+      replaying = false;
+      setReply(msgTexts.has(replyTo) ? replyTo : 0); // つなぎ直しでも、返信先の発言が残っていれば返信を続ける
+    }
+    else if (ev.type === 'message') {
+      if (partialEls.has(ev.message.from)) showPartial({ agent: ev.message.from }); // 確定した発言に置き換える
+      addMessage(ev.message); notifyMessage(ev.message);
+    }
+    else if (ev.type === 'partial') showPartial(ev.partial);
+    else if (ev.type === 'status') renderStatus(ev);
+    else if (ev.type === 'command') applyCmdState(ev.command); // コードブロックの実行状態（案 7.1）
+    else if (ev.type === 'reset') { clearList(); setReply(0); }
+  };
+  // EventSource は自動で再接続し、再接続時に snapshot を受け取る
+}
+clearList();
+connect();
+
+// ---- 入力 ----
+// 送信前の秘密情報の警告（案1）: 既知のキー形式だけをブラウザ内で調べる。見つけた値はログにも画面にも出さない。
+// 誤検知を避けるため、「ランダムに見える長い文字列」は対象にしない
+const SECRET_PATTERNS = [
+  ['API キー（sk-）', /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}/],
+  ['GitHub のトークン', /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/],
+  ['AWS のアクセスキー', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ['Slack のトークン', /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
+  ['Google の API キー', /\bAIza[0-9A-Za-z_-]{35}/],
+  ['秘密鍵', /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/],
+];
+const secretKinds = (text) => SECRET_PATTERNS.filter(([, re]) => re.test(text)).map(([name]) => name);
+// confirmSecrets は秘密情報らしき文字列があれば確認を出し、送信してよければ true を返す
+function confirmSecrets(text) {
+  const kinds = secretKinds(text);
+  if (!kinds.length) return Promise.resolve(true);
+  const dlg = $('#secretWarn');
+  $('#secretKinds').replaceChildren(...kinds.map((k) => Object.assign(document.createElement('li'), { textContent: t(k) })));
+  translateDom(dlg);
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => {
+      const ok = dlg.returnValue === 'send';
+      if (!ok) $('#input').focus();
+      resolve(ok);
+    }, { once: true });
+    dlg.returnValue = '';
+    dlg.showModal();
+    dlg.querySelector('button[value="edit"]').focus(); // 最初のフォーカスは「戻って編集」
+  });
+}
+// 送信: フリートーク・順番に発言の最中はその会話への発言。進んでいないときは「進め方」で選んだ方法で始める
+async function send() {
+  if ($('#secretWarn').open) return; // 確認中の Enter で二重に開かない
+  if (!(await confirmSecrets($('#input').value))) return;
+  if (replyTo) return chat(); // 返信は、進め方に関係なく今の会話への発言
+  if (status.discussion || status.free_talk || $('#talkMode').value === 'chat') return chat();
+  return $('#talkMode').value === 'discuss' ? discuss() : freetalk();
+}
+async function chat() {
+  const text = $('#input').value.trim();
+  if (!text) return;
+  $('#input').value = '';
+  autosize();
+  const body = replyTo ? { text, reply_to: replyTo } : { text };
+  setReply(0);
+  const res = await api('POST', '/api/messages', body);
+  // 送れなかったら、打った文を戻す（その間に次の文を打ち始めていれば戻さない）。返信先は今もあるときだけ戻す
+  if (res === undefined && !$('#input').value) {
+    $('#input').value = text;
+    autosize();
+    if (body.reply_to && msgTexts.has(body.reply_to)) setReply(body.reply_to);
+  }
+}
+async function discuss() {
+  const topic = $('#input').value.trim();
+  if (!topic) { toast(t('お題を入力してください')); $('#input').focus(); return; }
+  const ok = await api('POST', '/api/discussions', { topic, rounds: Number($('#rounds').value) || 3 });
+  if (ok) { $('#input').value = ''; autosize(); }
+}
+async function freetalk() {
+  const topic = $('#input').value.trim();
+  const res = await api('POST', '/api/freetalk', { topic });
+  if (res !== undefined) { $('#input').value = ''; autosize(); }
+}
+function autosize() { const t = $('#input'); t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }
+$('#input').addEventListener('input', autosize);
+$('#input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+$('#send').onclick = send;
+const syncRounds = () => { $('#roundsLabel').hidden = $('#talkMode').value !== 'discuss'; };
+{
+  const saved = loadSettings();
+  if (['freetalk', 'discuss', 'chat'].includes(saved.talk_mode)) $('#talkMode').value = saved.talk_mode;
+  if (Number.isInteger(saved.rounds)) $('#rounds').value = saved.rounds;
+  $('#hideMinor').checked = saved.hide_minor === true;
+  updateHidden();
+}
+$('#talkMode').onchange = (e) => { saveSetting('talk_mode', e.target.value); syncRounds(); };
+$('#rounds').onchange = (e) => saveSetting('rounds', Number(e.target.value));
+$('#cmdAll').onchange = (e) => { api('PUT', '/api/settings', { command_leader_only: e.target.value === 'leader' }); };
+$('#notify').checked = notifyOn();
+$('#notify').onchange = async (e) => {
+  let on = e.target.checked;
+  if (on && !('Notification' in window)) { toast(t('このブラウザは通知に対応していません')); on = false; }
+  else if (on && Notification.permission !== 'granted') on = (await Notification.requestPermission()) === 'granted'; // 許可はオンにしたときだけ求める
+  if (e.target.checked && !on) toast(t('通知が許可されていません。ブラウザのサイトの設定で許可してください'));
+  e.target.checked = on;
+  saveSetting('notify', on);
+};
+$('#theme').value = themePref();
+$('#theme').onchange = (e) => { saveSetting('theme', e.target.value); applyTheme(); };
+syncRounds(); // 保存した設定やブラウザが復元した選択に合わせる
+
+// ---- 表示言語（案 14） ----
+// 固定の文言は translateDom で訳し、スクリプトで作る文言は t() で訳す。切り替えたら作り直す
+const translateStatic = () => ['header', '#settings', 'footer', '#inbox', '#inboxPanel', '#viewbar'].forEach((s) => translateDom($(s)));
+$('#lang').innerHTML = I18N_LANGS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+$('#lang').value = lang;
+$('#lang').onchange = (e) => {
+  setLang(e.target.value);
+  translateStatic();
+  if (status.agents) { for (const c of [...$('#agents').children]) c.remove(); renderStatus(status); } // チップは作り直して訳す
+  loadModels(); // モデル選択の「既定」「一時停止」を訳し直す
+};
+translateStatic();
+$('#stop').onclick = () => api('POST', '/api/stop');
+$('#summarize').onclick = () => { if (confirm(t('会話を要約してから、履歴と各エージェントのセッションを破棄して新しい会話を始めますか？（元のログは残ります）'))) api('POST', '/api/summarize'); };
+$('#reset').onclick = () => { if (confirm(t('履歴と各エージェントのセッションを破棄して、新しい会話を始めますか？'))) api('POST', '/api/reset'); };
+$('#maxHops').onchange = (e) => { api('PUT', '/api/settings', { max_hops: Number(e.target.value) }); };
+$('#delay').onchange = (e) => { api('PUT', '/api/settings', { delay_sec: Number(e.target.value) }); };
+$('#rotateTokens').onchange = (e) => { api('PUT', '/api/settings', { rotate_tokens: Number(e.target.value) }); };
+$('#turnTimeout').onchange = (e) => { api('PUT', '/api/settings', { turn_timeout_sec: Number(e.target.value) * 60 }); };
+async function applyWorkdir() {
+  const path = $('#workdirInput').value.trim();
+  if (!path || path === status.workdir) return;
+  if (!confirm(t('作業ディレクトリを {0} に変更しますか？今の会話は残し、変更先で前に話していた会話があればそれを復元します（なければ新しい会話を始めます）。', path))) {
+    $('#workdirInput').value = status.workdir;
+    return;
+  }
+  await api('PUT', '/api/settings', { workdir: path }); // 失敗時はトーストで理由を示す
+  $('#workdirInput').blur();
+  $('#workdirInput').value = status.workdir;
+}
+$('#workdirApply').onclick = applyWorkdir;
+$('#workdirInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) applyWorkdir(); });
+$('#leader').onchange = (e) => { api('PUT', '/api/settings', { leader: e.target.value }); };
+$('#mentionButtons').onclick = (e) => {
+  const id = e.target.dataset.mention;
+  if (!id) return;
+  const t = $('#input');
+  t.value = `@${id} ` + t.value.replace(/^(@\w+\s+)+/, '');
+  t.focus();
+};
+
+// ---- 過去ログ ----
+async function showLogList() {
+  const list = await api('GET', '/api/logs');
+  if (!list) return;
+  document.body.classList.add('viewing-logs');
+  const box = $('#logs');
+  box.innerHTML = `<div class="logbar"><h2>${t('ログ一覧')}</h2><button data-act="back">${t('チャットに戻る')}</button></div>
+    ${searchBarHTML()}
+    <div class="loglist">${list.length ? list.map((l) => `
+      <button class="logitem" data-log="${esc(l.name)}">
+        <span class="title">${esc(l.title || t('（人間の発言なし）'))}</span>
+        <span class="muted">${l.current ? t('現在の会話 · ') : ''}${t('{0}件', l.count)}</span>
+        <span class="muted">${esc(l.started)} 〜 ${esc(l.updated)}</span>
+        <span class="muted">${esc(l.name)}</span>
+      </button>`).join('') : `<p class="muted">${t('ログはまだありません。')}</p>`}</div>`;
+  $('#log').scrollTop = 0;
+}
+// showLog は1つのログを表示する。hit を渡すと、その発言まで送って目印を付ける（検索結果からの移動）
+async function showLog(name, hit) {
+  const msgs = await api('GET', '/api/logs/' + encodeURIComponent(name));
+  if (!msgs) return;
+  const box = $('#logs');
+  box.innerHTML = `<div class="logbar"><h2>${esc(name)}</h2><button data-act="list">${t('ログ一覧')}</button>
+    <button data-export="${esc(name)}">${t('Markdown で書き出す')}</button>
+    <button data-act="back">${t('チャットに戻る')}</button></div>`;
+  msgs.forEach((m) => {
+    const el = messageEl(m, true);
+    el.dataset.mid = m.id;
+    // この発言までを引き継いで新しい会話を始める（案3）
+    el.insertAdjacentHTML('beforeend', `<button class="branch" data-branch="${m.id}" data-branch-log="${esc(name)}" title="${esc(t('この発言までを引き継いで新しい会話を始める。元のログは変更しない'))}">${t('ここから分岐')}</button>`);
+    box.appendChild(el);
+  });
+  const target = hit ? box.querySelector(`[data-mid="${hit}"]`) : null;
+  if (target) {
+    target.classList.add('hit');
+    target.scrollIntoView({ block: 'center' });
+  } else {
+    $('#log').scrollTop = 0;
+  }
+}
+
+// ---- 会話の検索（案 8.4） ----
+let lastQuery = '';
+function searchBarHTML() {
+  return `<div class="searchbar">
+    <input type="search" id="searchQ" placeholder="${esc(t('過去ログを横断して発言を探す'))}" value="${esc(lastQuery)}">
+    <button data-act="search">${t('検索')}</button>
+  </div>`;
+}
+async function runSearch(q) {
+  lastQuery = q.trim();
+  if (!lastQuery) return;
+  const res = await api('GET', '/api/search?q=' + encodeURIComponent(lastQuery));
+  if (!res) return;
+  document.body.classList.add('viewing-logs');
+  const box = $('#logs');
+  const head = res.total_partial // 上限に達して残りのログを探していない（案4）
+    ? t('{0}件以上、新しい{1}件を表示（{2}件のログを検索して打ち切り）', res.total, res.hits.length, res.logs)
+    : res.truncated
+    ? t('{0}件中、新しい{1}件を表示（{2}件のログを検索）', res.total, res.hits.length, res.logs)
+    : t('{0}件（{1}件のログを検索）', res.total, res.logs);
+  box.innerHTML = `<div class="logbar"><h2>${t('検索')}: ${esc(lastQuery)}</h2><button data-act="list">${t('ログ一覧')}</button><button data-act="back">${t('チャットに戻る')}</button></div>
+    ${searchBarHTML()}
+    <p class="muted">${esc(head)}</p>
+    <div class="loglist">${res.hits.map((h) => `
+      <button class="hititem" data-log="${esc(h.log)}" data-hit="${h.id}">
+        <span class="muted">#${h.id} · ${esc(h.name || h.from)} · ${esc(h.time)}${h.current ? ' · ' + t('現在の会話') : ''}</span>
+        <span class="snippet">${mark(h.snippet, lastQuery)}</span>
+        <span class="muted">${esc(h.log)}</span>
+      </button>`).join('') || `<p class="muted">${t('見つかりませんでした。')}</p>`}</div>`;
+  $('#log').scrollTop = 0;
+}
+// mark は本文を安全に囲んだうえで、一致箇所だけを強調する
+function mark(text, q) {
+  const s = esc(text), needle = esc(q).toLowerCase();
+  if (!needle) return s;
+  let out = '', i = 0;
+  for (;;) {
+    const at = s.toLowerCase().indexOf(needle, i);
+    if (at < 0) return out + s.slice(i);
+    out += s.slice(i, at) + '<mark>' + s.slice(at, at + needle.length) + '</mark>';
+    i = at + needle.length;
+  }
+}
+// branchFrom は過去ログの発言 id までを引き継いで新しい会話を始める（案3）。今の会話は「新しい会話」と同じく終わる（ログは残る）
+async function branchFrom(name, id) {
+  if (!confirm(t('{0} の #{1} までを引き継いで、新しい会話を始めますか？今の会話は終わります（ログは残ります）。', name, id))) return;
+  if (await api('POST', '/api/logs/' + encodeURIComponent(name) + '/branch', { upto: id }) !== undefined) backToChat();
+}
+function backToChat() {
+  document.body.classList.remove('viewing-logs');
+  $('#logs').innerHTML = '';
+  $('#log').scrollTop = $('#log').scrollHeight;
+}
+$('#openLogs').onclick = showLogList;
+$('#addAgent').onclick = async () => {
+  if (await api('POST', '/api/agents', { type: $('#agentType').value })) loadModels(); // 追加したエージェントのモデル候補を取り直す
+};
+$('#agentList').onclick = (e) => {
+  const id = e.target.dataset.remove;
+  if (id && confirm(t('@{0} を削除しますか？（この会話でのセッションは破棄されます）', id))) api('DELETE', '/api/agents/' + encodeURIComponent(id));
+};
+// エージェントごとの応答の上限（空欄なら会話全体の設定に戻す。案 8.3）
+$('#agentList').onchange = (e) => {
+  const id = e.target.dataset.timeout;
+  if (id) api('PUT', '/api/agents/' + encodeURIComponent(id), { timeout_sec: Number(e.target.value) * 60 });
+  const pid = e.target.dataset.perm;
+  if (pid) setPermission(e.target, pid);
+};
+// 権限の段階（案8）: 既定（起動時の設定のまま）・読み取りのみ・作業フォルダに書き込み可。「制限なし」は用意しない。
+// 権限を上げる操作（書き込み可を選ぶ、読み取りのみから外す）は確認を出す。変更はサーバがログとチャットに残す
+const PERM_LEVELS = [['', '既定（起動時の設定のまま）'], ['read_only', '読み取りのみ'], ['workspace_write', '作業フォルダに書き込み可']];
+function permissionControl(a) {
+  if (!a.permission_ok) return ` <span class="muted" title="${esc(t('この CLI は画面から権限を変えられません'))}">${t('権限: 非対応')}</span>`;
+  const opts = PERM_LEVELS.map(([v, label]) => `<option value="${v}"${(a.permission || '') === v ? ' selected' : ''}>${esc(t(label))}</option>`).join('');
+  const over = (a.permission_override || []).join(' ');
+  return ` <label class="muted" title="${esc(t('次の発言から反映。守るファイルへの禁止ルールはどの段階でも外さない'))}">${t('権限')} <select data-perm="${esc(a.id)}" data-cur="${esc(a.permission || '')}">${opts}</select></label>` +
+    (over ? ` <span class="muted" title="${esc(over)}">${esc(t('⚠ 起動時の指定（*_ARGS）を上書きしています'))}</span>` : '') +
+    // Codex のサンドボックスは MCP サーバの側には効かない
+    (a.type === 'codex' && a.permission ? ` <span class="muted">${esc(t('ファイルの書き込みだけを制限します（MCP ツールは制限されません）'))}</span>` : '');
+}
+async function setPermission(sel, id) {
+  const cur = sel.dataset.cur, next = sel.value;
+  const raise = next === 'workspace_write' || (cur === 'read_only' && next !== 'read_only');
+  if (raise && !confirm(t('@{0} の権限を「{1}」に上げます。エージェントがあなたの PC で行える操作が増えます。よろしいですか？', id, t(PERM_LEVELS.find(([v]) => v === next)[1])))) {
+    sel.value = cur;
+    return;
+  }
+  if (await api('PUT', '/api/agents/' + encodeURIComponent(id), { permission: next }) === undefined) sel.value = cur;
+  else sel.dataset.cur = next;
+}
+$('#openSettings').onclick = () => $('#settings').showModal();
+$('#closeSettings').onclick = () => $('#settings').close();
+// CLI の診断（案6）: 押したときだけ各 CLI を --version で起動する
+const DIAG_STATUS = { ok: '✓ 取得できた', not_found: '✗ 見つからない', failed: '✗ 起動に失敗した', timeout: '✗ 時間切れ', unsupported: '— 対象外' };
+$('#runDiag').onclick = async () => {
+  const btn = $('#runDiag');
+  btn.disabled = true;
+  $('#diagNote').textContent = t('診断しています…');
+  const res = await api('POST', '/api/diag');
+  btn.disabled = false;
+  $('#diagNote').textContent = '';
+  if (!res) return;
+  $('#diagList').innerHTML = res.map((d) => `<li title="${esc(d.bin || '')}"><strong>${esc(d.name)}</strong>: ${esc(t(DIAG_STATUS[d.status] || d.status))}${d.version ? ' ' + esc(d.version) : ''}${d.detail ? ` <span class="muted">${esc(d.detail)}</span>` : ''}${d.ms ? ` <span class="muted">(${d.ms}ms)</span>` : ''}</li>`).join('');
+};
+$('#openConfig').onclick = async () => {
+  const r = await api('POST', '/api/config/open');
+  if (r && r.dir) $('#configDir').textContent = r.dir;
+};
+// Esc で閉じたときも、編集中の欄のフォーカスを外して変更（change）を確定させる
+$('#settings').addEventListener('cancel', () => { if ($('#settings').contains(document.activeElement)) document.activeElement.blur(); });
+$('#logs').onclick = (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.export) location.href = '/api/logs/' + encodeURIComponent(b.dataset.export) + '/export'; // Markdown で保存（案 8.4）
+  else if (b.dataset.branch) branchFrom(b.dataset.branchLog, Number(b.dataset.branch));
+  else if (b.dataset.log) showLog(b.dataset.log, b.dataset.hit);
+  else if (b.dataset.act === 'search') runSearch($('#searchQ').value);
+  else if (b.dataset.act === 'list') showLogList();
+  else if (b.dataset.act === 'back') backToChat();
+};
+// 検索欄は Enter でも実行する
+$('#logs').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'searchQ') { e.preventDefault(); runSearch(e.target.value); }
+});
+</script>
+</body>
+</html>
