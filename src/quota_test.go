@@ -196,4 +196,29 @@ func TestRefreshQuotasSkipsPaused(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("再開しても取得しない")
 	}
+	// 取得のあとに usage.json を書くので、書き終わるまで待つ（一時フォルダの後片付けとぶつからないように）
+	waitQuotaSaved(t, r, on, off)
+}
+
+// waitQuotaSaved はエージェントの利用枠の取得と保存が終わるまで待つ
+func waitQuotaSaved(t *testing.T, r *Room, agents ...*Agent) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		r.mu.Lock()
+		done := true
+		for _, a := range agents {
+			if a.quotaBusy || a.quota.Fetched == "" {
+				done = false
+			}
+		}
+		r.mu.Unlock()
+		if done {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("利用枠の保存が終わらない")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
