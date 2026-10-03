@@ -30,6 +30,7 @@
   header h1 { font-size: 16px; margin: 0; }
   #settings #toast { left: 50%; } /* 設定ダイアログ内ではダイアログ（画面中央）に合わせる */
   #workdir { color: var(--muted); font-size: 12px; font-family: var(--font-mono); word-break: break-all; }
+  #leaderInfo { color: var(--muted); font-size: 12px; margin-top: -10px; } /* 作業ディレクトリのすぐ下に並べる */
   #settings, #secretWarn { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); min-width: min(28em, calc(100vw - 3em)); }
   #settings::backdrop, #secretWarn::backdrop { background: rgba(0, 0, 0, .3); }
   #secretWarn { max-width: min(36em, calc(100vw - 3em)); font-size: 13px; }
@@ -240,6 +241,7 @@
     <button id="openLogs">ログ</button>
   </div>
   <div id="workdir"></div>
+  <div id="leaderInfo"></div>
 </header>
 <div id="pane">
 
@@ -775,6 +777,7 @@ function renderStatus(s) {
   (s.commands || []).forEach(applyCmdState); // つなぎ直したときも、実行中・実行済みの状態を戻す
   for (const el of document.querySelectorAll('#list .cmd input.cwd')) el.placeholder = s.workdir; // 空欄なら作業ディレクトリで実行
   $('#workdir').textContent = t('作業ディレクトリ: {0}', s.workdir);
+  $('#leaderInfo').textContent = t('進行役: {0}', agents.find((a) => a.id === s.leader)?.name || t('なし'));
   if (document.activeElement !== $('#workdirInput')) $('#workdirInput').value = s.workdir;
   if (document.activeElement !== $('#maxHops')) $('#maxHops').value = s.max_hops;
   if (document.activeElement !== $('#delay')) $('#delay').value = s.delay_sec;

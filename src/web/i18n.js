@@ -101,6 +101,7 @@ const I18N_EN = {
   'この発言に返信': 'Reply to this message',
   '返信をやめる': 'Cancel reply',
   '作業ディレクトリ: {0}': 'Working directory: {0}',
+  '進行役: {0}': 'Leader: {0}',
   'なし': 'None',
   '（未インストール）': ' (not installed)',
   '削除': 'Remove',
