@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -88,23 +89,20 @@ func indexOf(s []string, v string) int {
 	return -1
 }
 
-// フリートーク中の人間の発言には、進行役が先に答え、ほかのエージェントはその回答が終わってから考え始める
-func TestFreeTalkLeaderAnswersFirst(t *testing.T) {
+// 宛先のない人間の発言には、進行役がいても全員が同時に考え始める（@all と同じ）
+func TestFreeTalkNoMentionWakesAll(t *testing.T) {
 	r, log, mu := newFreeTalkRoom(t, "x")
 	if _, err := r.PostHuman("質問です"); err != nil {
 		t.Fatal(err)
 	}
 	got := waitStarts(t, log, mu, "x", "y", "z")
-	leaderEnd := indexOf(got, "end:x")
-	for _, id := range []string{"y", "z"} {
-		if s := indexOf(got, "start:"+id); leaderEnd < 0 || s < leaderEnd {
-			t.Fatalf("%s が進行役の回答より先に考え始めた: %v", id, got)
-		}
+	if first := indexOf(got, "end:x"); first >= 0 && first < 3 {
+		t.Fatalf("ほかのエージェントが進行役の回答を待った: %v", got)
 	}
 }
 
-// 名指しされた人がいれば、進行役ではなくその人が先に答える
-func TestFreeTalkMentionedAnswersFirst(t *testing.T) {
+// 名指しされた人だけが考え始め、ほかのエージェントは名指しされた人の（宛先のない）回答で考え始める
+func TestFreeTalkMentionWakesOnlyMentioned(t *testing.T) {
 	r, log, mu := newFreeTalkRoom(t, "x")
 	if _, err := r.PostHuman("@z に質問です"); err != nil {
 		t.Fatal(err)
@@ -113,31 +111,37 @@ func TestFreeTalkMentionedAnswersFirst(t *testing.T) {
 	zEnd := indexOf(got, "end:z")
 	for _, id := range []string{"x", "y"} {
 		if s := indexOf(got, "start:"+id); zEnd < 0 || s < zEnd {
-			t.Fatalf("%s が名指しされた人より先に考え始めた: %v", id, got)
+			t.Fatalf("名指しされていない %s が考え始めた: %v", id, got)
 		}
 	}
 }
 
-// 進行役も名指しもなければ、全員が同時に考え始める（待たない）
-func TestFreeTalkNoLeaderNoWait(t *testing.T) {
-	r, log, mu := newFreeTalkRoom(t, "")
-	if _, err := r.PostHuman("質問です"); err != nil {
-		t.Fatal(err)
-	}
-	got := waitStarts(t, log, mu, "x", "y", "z")
-	if first := indexOf(got, "end:x"); first >= 0 && first < 3 {
-		t.Fatalf("ほかのエージェントが待たされた: %v", got)
-	}
-}
-
-// 先に答える人が一時停止していれば、待たない
-func TestFreeTalkFirstResponderPaused(t *testing.T) {
-	r, log, mu := newFreeTalkRoom(t, "x")
+// 人間・進行役・メンバーの区別なく、宛先がなければ全員、あれば宛先の人だけを起動する
+func TestFreeTalkAddressed(t *testing.T) {
+	r, _, _ := newFreeTalkRoom(t, "x")
 	r.mu.Lock()
-	r.agent("x").paused = true
-	r.mu.Unlock()
-	if _, err := r.PostHuman("質問です"); err != nil {
-		t.Fatal(err)
+	defer r.mu.Unlock()
+	cases := []struct {
+		from, text string
+		want       []string
+	}{
+		{"human", "質問です", []string{"x", "y", "z"}},
+		{"human", "@y お願いします", []string{"y"}},
+		{"human", "@all どう思う？", []string{"x", "y", "z"}},
+		{"x", "@y は実装、@z は確認をお願いします", []string{"y", "z"}},
+		{"x", "@human この方針でよいか確認してください", nil},
+		{"y", "終わりました", []string{"x", "z"}},
+		{"y", "メールは user@example.com です", []string{"x", "z"}},
 	}
-	waitStarts(t, log, mu, "y", "z")
+	for _, c := range cases {
+		var got []string
+		for _, id := range []string{"x", "y", "z"} {
+			if id != c.from && r.freeTalkAddressedLocked(Message{From: c.from, Kind: "chat", Text: c.text}, id) {
+				got = append(got, id)
+			}
+		}
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s「%s」: 起動 = %v, want %v", c.from, c.text, got, c.want)
+		}
+	}
 }

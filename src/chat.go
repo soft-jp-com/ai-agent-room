@@ -489,9 +489,8 @@ func (r *Room) PostHumanReply(text string, replyTo int) (Message, error) {
 	r.checkRotateLocked()
 	if r.free != nil {
 		// フリートーク中は各エージェントが新着を見て自分から発言する。人間の発言で発言数の上限をリセットする。
-		// 進行役（または名指しされた人）が先に答え、ほかのエージェントはその回答を読んでから発言する（ルール1）
+		// 宛先（@ID）がなければ全員、あれば宛先の人だけが考え始める（freeTalkAddressedLocked）
 		r.hops = 0
-		r.setFirstRespondersLocked(text)
 		r.free.limitNotified = false
 		r.pushStatusLocked()
 		return m, nil
@@ -1105,7 +1104,7 @@ func (r *Room) buildPrompt(a *Agent, delta []Message, token, minutesPath string)
 		b.WriteString("- 通常のチャットでは、他のエージェントに意見や作業を求めたいときに @ID で呼びかけると、呼ばれた相手が次に発言します。必要がなければ呼びかけないでください。他の参加者の発言に触れるだけなら @ を付けずに名前で書いてください。\n")
 		b.WriteString("- 全員への呼びかけには全員が同時に回答します。他のエージェントの回答は、次に発言するときに新着として届きます。\n")
 		b.WriteString("- ディスカッション中は発言順が決まっています（[system] のメッセージで通知されます）。\n")
-		b.WriteString("- フリートーク中は、全員が新着を見て、話したいときに自由に発言します。\n")
+		b.WriteString("- フリートーク中は、全員が新着を見て、話したいときに自由に発言します。発言に @ID の呼びかけがあれば呼ばれた相手（@human なら人間）だけが、なければ全員が次の発言を考えます。特定の人に任せたいときだけ @ID で呼びかけてください。\n")
 		b.WriteString("- 簡潔に、会話で使われている言語で答えてください。\n")
 		b.WriteString("- 付け加えることが特にない場合は [pass] とだけ返してください。\n")
 		fmt.Fprintf(&b, "- 作業ディレクトリ: %s\n\n", r.workdir)

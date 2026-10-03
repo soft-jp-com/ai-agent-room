@@ -11,7 +11,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 )
@@ -22,12 +21,8 @@ type FreeTalk struct {
 	StartedAt int64  `json:"started_at"` // UnixMilli
 
 	limitNotified bool // 発言数の上限に達したことを通知済みか
-	// firstIDs は、直近の人間の発言に先に答えるエージェント（進行役、または名指しされた人）。
-	// 全員がそのあとのターンを終えるまで、ほかのエージェントは発言を考え始めない（ルール1。回答の重複を防ぐ）
-	firstIDs   []string
-	firstSince time.Time // firstIDs を決めた時刻（これより前に始まったターンは、答えたことにしない）
-	ctx        context.Context
-	cancel     context.CancelFunc
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 const freeTalkMaxFailures = 3 // 連続で失敗したエージェントはフリートークから外す
@@ -87,11 +82,11 @@ func (r *Room) endFreeTalkLocked(reason string) {
 	r.cond.Broadcast() // 待機中のループを終了させる
 }
 
-// hasNewChatLocked は a がまだ受け取っていない、他の参加者の発言があるかを返す。
+// hasNewChatLocked は a がまだ受け取っていない、a 宛ての他の参加者の発言があるかを返す。
 // システムメッセージだけでは発言のきっかけにしない。コマンドの実行結果は、呼び出す相手（進行役）だけのきっかけにする
 func (r *Room) hasNewChatLocked(a *Agent) bool {
 	for _, m := range r.messages[a.cursor:] {
-		if m.From != a.ID && m.Kind == "chat" {
+		if m.From != a.ID && m.Kind == "chat" && r.freeTalkAddressedLocked(m, a.ID) {
 			return true
 		}
 		if m.Kind == "command_result" && r.commandNotifyTargetLocked(m) == a.ID {
@@ -101,51 +96,21 @@ func (r *Room) hasNewChatLocked(a *Agent) bool {
 	return false
 }
 
-// firstAnswerTimeout を過ぎたら、先に答える人を待たずにほかのエージェントも発言できる（応答しない場合の保険）
-const firstAnswerTimeout = 15 * time.Minute
-
-// setFirstRespondersLocked は人間の発言 text に先に答えるエージェントを決める。
-// 名指し（@ID）があればその人、なければ進行役。@all・宛先も進行役もなければ、全員が同時に考える
-func (r *Room) setFirstRespondersLocked(text string) {
-	ft := r.free
-	if ft == nil {
-		return
+// freeTalkAddressedLocked は、フリートークの発言 m で id のエージェントを起動するかを返す。
+// 人間・進行役・メンバーの区別なく、宛先（@ID・@human）がなければ全員（@all と同じ）、あれば宛先の人だけを起動する。
+// 宛先にしなかったエージェントも、次に起動したときに新着としてこの発言を受け取る
+func (r *Room) freeTalkAddressedLocked(m Message, id string) bool {
+	ids, all := r.mentions(m.Text, m.From)
+	if all || contains(ids, id) {
+		return true
 	}
-	ids, all := r.mentions(text, "human")
-	if all {
-		ids = nil
-	} else if len(ids) == 0 && r.leader != "" {
-		ids = []string{r.leader}
-	}
-	ft.firstIDs, ft.firstSince = ids, time.Now()
-	if len(ids) > 0 {
-		r.log.Info("free_talk.first_responders", "agents", strings.Join(ids, ","))
-	}
+	return len(ids) == 0 && !mentionsHuman(m.Text)
 }
 
-// firstAnsweredLocked は、先に答えるエージェント a のターン（started に開始）が終わったことを記録する
-func (r *Room) firstAnsweredLocked(ft *FreeTalk, a *Agent, started time.Time) {
-	if started.Before(ft.firstSince) {
-		return // 人間の発言より前に始まったターンは、その発言に答えていない
-	}
-	if i := slices.Index(ft.firstIDs, a.ID); i >= 0 {
-		ft.firstIDs = slices.Delete(ft.firstIDs, i, i+1)
-		r.cond.Broadcast() // 待っているほかのエージェントを起こす
-	}
-}
-
-// waitsForFirstLocked は、a が先に答える人の回答を待つべきかを返す。
-// 先に答える人が一時停止・参加できない場合や、時間切れのときは待たない
-func (r *Room) waitsForFirstLocked(ft *FreeTalk, a *Agent) bool {
-	if len(ft.firstIDs) == 0 || slices.Contains(ft.firstIDs, a.ID) {
-		return false
-	}
-	if time.Since(ft.firstSince) > firstAnswerTimeout {
-		ft.firstIDs = nil
-		return false
-	}
-	for _, id := range ft.firstIDs {
-		if f := r.agent(id); f != nil && f.active() {
+// mentionsHuman は text が @human で人間に呼びかけているかを返す
+func mentionsHuman(text string) bool {
+	for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
+		if strings.EqualFold(m[1], "human") {
 			return true
 		}
 	}
@@ -168,11 +133,6 @@ func (r *Room) freeLoop(ft *FreeTalk, a *Agent) {
 		// 新着がない / 考え中（チャットのターンが残っている場合など）なら次の発言まで待つ
 		if a.state == "thinking" || !r.hasNewChatLocked(a) {
 			r.cond.Wait()
-			continue
-		}
-		// 人間の発言には、進行役（または名指しされた人）が先に答える。その回答が出るまで待つ
-		if r.waitsForFirstLocked(ft, a) {
-			r.condWaitTimeout(firstAnswerTimeout)
 			continue
 		}
 		if hopLimitReached(r.hops, r.maxHops) {
@@ -200,11 +160,9 @@ func (r *Room) freeLoop(ft *FreeTalk, a *Agent) {
 			continue
 		}
 
-		started := time.Now()
 		r.mu.Unlock()
 		outcome := r.runTurn(ft.ctx, a)
 		r.mu.Lock()
-		r.firstAnsweredLocked(ft, a, started)
 
 		if outcome != outcomeFailed {
 			failures = 0
@@ -215,23 +173,8 @@ func (r *Room) freeLoop(ft *FreeTalk, a *Agent) {
 			a.state = "idle"
 			r.postLocked("system", fmt.Sprintf("%s が%d回続けて失敗したので、フリートークから外しました。", a.Name, failures), "system")
 			r.log.Error("free_talk.agent_removed", "agent", a.ID, "failures", failures)
-			if i := slices.Index(ft.firstIDs, a.ID); i >= 0 { // 外したエージェントの回答は待たない
-				ft.firstIDs = slices.Delete(ft.firstIDs, i, i+1)
-				r.cond.Broadcast()
-			}
 			r.pushStatusLocked()
 			return
 		}
 	}
-}
-
-// condWaitTimeout は r.cond.Wait を、d が過ぎたら起きるようにして呼ぶ（r.mu を持った状態で呼ぶ）
-func (r *Room) condWaitTimeout(d time.Duration) {
-	t := time.AfterFunc(d, func() {
-		r.mu.Lock()
-		r.cond.Broadcast()
-		r.mu.Unlock()
-	})
-	r.cond.Wait()
-	t.Stop()
 }

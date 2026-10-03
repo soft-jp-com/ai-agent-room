@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// defaultRules はこの会話でのルール（rules.md がないときに使う。@claude2 の文面、#1592）
-const defaultRules = `1. 人間の質問には、進行役（または名指しされた人）が先に答える。ほかの人は、訂正や反対があるときだけ発言し、同意だけなら [pass] にする。
+// defaultRules はこの会話でのルール（rules.md がないときに使う。@claude2 の文面、#1592。1 は宛先の仕様に合わせて 2026-10-03 に変更）
+const defaultRules = `1. 宛先のない質問には、全員がそれぞれの立場から答えてよい。ほかの人と同じ答えになるときは [pass] にする。名指しされた質問には、名指しされた人が答える。
 2. 作業は、進行役が割り振ってから始める。名乗り出たら、進行役の返事を待つ。
 3. 人間に実行してもらうコマンドは、進行役だけが出す。ほかの人は進行役に提案する。
 4. そのコマンドは、言語指定つきのコードブロック（powershell / cmd / bash）で書く。人間は［実行］ボタンで実行できるので、スクリプトファイルは作らない。
@@ -28,7 +28,7 @@ const defaultRules = `1. 人間の質問には、進行役（または名指し�
 9. 完了を報告するときは、確認した内容（build、test、画面）と、確認していないことを分けて書く。`
 
 // defaultRulesEn は defaultRules の英語版（言語の設定が英語で、rules.en.md も rules.md もないときに使う）
-const defaultRulesEn = `1. The leader (or whoever is named) answers the human's questions first. Others speak only to correct or disagree; if you only agree, reply [pass].
+const defaultRulesEn = `1. Anyone may answer a question with no addressee from their own point of view. If your answer would repeat someone else's, reply [pass]. A question addressed to someone is answered by that person.
 2. Start work only after the leader assigns it. If you volunteer, wait for the leader's reply.
 3. Only the leader gives commands for the human to run. Others suggest them to the leader.
 4. Write those commands in code blocks with a language (powershell / cmd / bash). The human can run them with the [Run] button, so do not create script files.
