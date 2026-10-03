@@ -204,9 +204,14 @@ func (r *Room) postProfileLocked() {
 	if oldCaps != "" {
 		legacy = append(legacy, oldCaps)
 	}
-	format := "【環境とこの会話でのルール】（AI Agent Room が起動時と新しい会話の開始時に投稿）\n\n■ 環境\n%s\n- 作業ディレクトリ: %s\n\n■ エージェント（できること。人間が設定フォルダの %s で宣言）\n%s\n\n■ この会話でのルール\n%s"
+	// 人間への確認・依頼に @human を付けてもらうため、参加者として人間も載せる（画面の「あなたへ」は @human 宛ての発言を集める）
+	format := "【環境とこの会話でのルール】（AI Agent Room が起動時と新しい会話の開始時に投稿）\n\n■ 環境\n%s\n- 作業ディレクトリ: %s\n\n" +
+		"■ 参加者\n- @human（人間）: 依頼・確認・判断をし、コマンドを［実行］で実行する。人間に確認・判断・作業を頼むときは、発言に @human を付ける（画面の「あなたへ」に集まる）\n- エージェント: 次の「■ エージェント」のとおり\n\n" +
+		"■ エージェント（できること。人間が設定フォルダの %s で宣言）\n%s\n\n■ この会話でのルール\n%s"
 	if en {
-		format = "[Environment and rules for this chat] (posted by AI Agent Room at startup and when a new chat starts)\n\n■ Environment\n%s\n- Working directory: %s\n\n■ Agents (what each may do, declared by the human in %s in the config folder)\n%s\n\n■ Rules for this chat\n%s"
+		format = "[Environment and rules for this chat] (posted by AI Agent Room at startup and when a new chat starts)\n\n■ Environment\n%s\n- Working directory: %s\n\n" +
+			"■ Participants\n- @human (the human): makes requests, checks and decides, and runs commands with [Run]. When you need the human to check, decide or do something, put @human in your message (it is collected under \"For you\" on the screen)\n- Agents: as listed under \"■ Agents\" below\n\n" +
+			"■ Agents (what each may do, declared by the human in %s in the config folder)\n%s\n\n■ Rules for this chat\n%s"
 	}
 	text := fmt.Sprintf(format, r.envProfile.text(r.langLocked()), r.workdir, capabilitiesFileName, caps, rules)
 	if len(legacy) > 0 {

@@ -79,7 +79,7 @@ func TestEnvProfileCapabilities(t *testing.T) {
 	dir := t.TempDir()
 
 	r.SetEnvProfile(&envInfo{OS: "test"}, dir, "") // capabilities.json がない
-	if m := lastMessage(r); !strings.Contains(m.Text, "■ エージェント") || !strings.Contains(m.Text, "- @x（X）: 書き込み 不明 / コマンド実行 不明 / 本番操作 不明") {
+	if m := lastMessage(r); !strings.Contains(m.Text, "■ 参加者\n- @human（人間）:") || !strings.Contains(m.Text, "■ エージェント") || !strings.Contains(m.Text, "- @x（X）: 書き込み 不明 / コマンド実行 不明 / 本番操作 不明") {
 		t.Fatalf("宣言がないときの表示:\n%s", m.Text)
 	}
 	if err := os.WriteFile(filepath.Join(dir, capabilitiesFileName), []byte(`{"x": {"write": true, "prod": false}}`), 0o644); err != nil {
@@ -127,7 +127,7 @@ func TestEnvProfileEnglish(t *testing.T) {
 	cfg := t.TempDir()
 	r.SetEnvProfile(&envInfo{OS: "test", Shells: []shellFound{{Name: "cmd"}}}, cfg, "")
 	m := lastMessage(r)
-	for _, want := range []string{"■ Environment", "- OS: test", "  - cmd: not found", "- Working directory: " + r.workdir,
+	for _, want := range []string{"■ Environment", "■ Participants\n- @human (the human):", "- OS: test", "  - cmd: not found", "- Working directory: " + r.workdir,
 		"- @x (X): write unknown / run commands unknown / production unknown", "■ Rules for this chat", "rules.md and so on)"} {
 		if !strings.Contains(m.Text, want) {
 			t.Fatalf("%q がない:\n%s", want, m.Text)
