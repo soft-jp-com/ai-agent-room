@@ -102,6 +102,11 @@ const I18N_EN = {
   '返信をやめる': 'Cancel reply',
   '作業ディレクトリ: {0}': 'Working directory: {0}',
   '進行役: {0}': 'Leader: {0}',
+  '一時的にスクリプト実行を許可': 'Allow scripts to run for now',
+  '⚠ 進行役のコマンドを、内容を確認せずにあなたの権限で実行します。エージェントの権限の外で動くため、エージェントが誤ったコマンドや、読んだ Web ページなどに誘導されたコマンドを書いた場合もそのまま実行されます。\n\n画面が見えている間だけ有効で、画面を開き直すとオフに戻ります。有効にしますか？':
+    '⚠ The leader\'s commands will run with your permissions without you checking them. They run outside the agent\'s permissions, so a wrong command, or one the agent was led to write by a web page it read, will also run as is.\n\nThis works only while the page is visible and turns off when the page is reopened. Turn it on?',
+  'オンの間、画面が見えているときに届いた進行役のコマンドを［実行］を押さずに実行する。確認が要るもの（進行役以外の発言、保護しているファイルや削除・本番の更新に触れるもの、禁止ルールを渡せないエージェントのもの）は今までどおり押して実行する。画面を開き直すとオフに戻る':
+    'While on, commands from the leader that arrive while this page is visible run without pressing [Run]. Commands that need confirmation (from agents other than the leader, touching protected files, deletions or production updates, or from agents that cannot receive deny rules) still need [Run]. Turns off when the page is reopened',
   'なし': 'None',
   '（未インストール）': ' (not installed)',
   '削除': 'Remove',

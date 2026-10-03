@@ -206,7 +206,7 @@ Set `AI_AGENT_ROOM_CONFIG_DIR` to change the parent folder (by default, the fold
 | `capabilities.json` | What each agent is allowed to do. Example: `{"claude": {"write": true, "exec": true, "prod": false}}` (`write` = write files, `exec` = run commands, `prod` = change production). Items not written are reported to the agents as "unknown" |
 | `protected.json` | Extra paths the agents must not edit. Example: `{"paths": ["D:\\secrets", "~/.aws"]}` |
 
-Agents are not allowed to read or write the auth token and the config folder. Claude Code receives deny rules on every start. For CLIs that cannot receive deny rules (Codex, agy), messages from those agents and code blocks that touch protected paths always ask for confirmation before **Run**.
+Agents are not allowed to read or write the auth token and the config folder. Claude Code receives deny rules on every start. For CLIs that cannot receive deny rules (Codex, agy), messages from those agents and code blocks that touch protected paths always ask for confirmation before **Run**. **Allow scripts to run for now** (above the messages, next to **Hide messages not for @human**; turning it on shows a warning and takes effect after **OK**) runs the leader's commands without pressing **Run** while the page is visible. Commands that ask for confirmation or carry a deletion/production warning still need **Run**. It is not saved and turns off when the page is reopened.
 
 ## API
 
@@ -236,7 +236,7 @@ Success returns `{"data": ...}`; failure returns `{"error_code", "message", "req
 | GET | `/api/logs/{name}/export` | A chat log as a Markdown file |
 | POST | `/api/logs/{name}/branch` | `{"upto": 12}` Start a new chat that carries over a past chat log up to the given message |
 | GET | `/api/search?q=…&from=…&limit=…` | Search messages across past chat logs (`from` filters by sender and is optional) |
-| POST | `/api/messages/{id}/blocks/{n}/run` | `{"cwd": "", "confirm": false, "private": false, "no_log": false, "timeout_min": 10}` Run code block `n` (from 0) of message `id` with your permissions (202; every field is optional) |
+| POST | `/api/messages/{id}/blocks/{n}/run` | `{"cwd": "", "confirm": false, "private": false, "no_log": false, "timeout_min": 10, "auto": false}` Run code block `n` (from 0) of message `id` with your permissions (202; every field is optional. With `auto` set to true, only blocks that need no confirmation run: from the leader, not touching protected paths, and from an agent that receives deny rules; others return 428 `CONFIRM_REQUIRED`) |
 | POST | `/api/messages/{id}/blocks/{n}/cancel` | Stop a running code block |
 | POST | `/api/config/open` | Open the config folder (where `rules.md`, `capabilities.json` and so on go) in the file manager |
 | GET | `/api/rules` | The startup rules as `{"ja": {...}, "en": {...}}`, each with `file` (the file to edit), `text` (its contents, or the default rules if there is no file), `custom` (whether the file exists), `in_use` (the file the posts in that language use, or `default`) and `legacy` (whether that file is in the old location) |

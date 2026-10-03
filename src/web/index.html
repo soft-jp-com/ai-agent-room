@@ -305,7 +305,7 @@
   </form>
 </dialog>
 
-<div id="viewbar"><label title="人間の発言、@human 宛ての発言、実行できるコマンドを含む発言、実行結果、システムの通知だけを表示する"><input type="checkbox" id="hideMinor"> @human 宛て以外を隠す</label> <span id="hiddenCount"></span></div>
+<div id="viewbar"><label title="人間の発言、@human 宛ての発言、実行できるコマンドを含む発言、実行結果、システムの通知だけを表示する"><input type="checkbox" id="hideMinor"> @human 宛て以外を隠す</label> <span id="hiddenCount"></span> <label title="オンの間、画面が見えているときに届いた進行役のコマンドを［実行］を押さずに実行する。確認が要るもの（進行役以外の発言、保護しているファイルや削除・本番の更新に触れるもの、禁止ルールを渡せないエージェントのもの）は今までどおり押して実行する。画面を開き直すとオフに戻る"><input type="checkbox" id="autoRun"> 一時的にスクリプト実行を許可</label></div>
 <div id="inbox" role="button" tabindex="0" title="あなたへの依頼の一覧を開く・閉じる"></div>
 <div id="inboxPanel" hidden>
   <div class="ipbar"><strong>あなたへの依頼（済みにしていないもの）</strong>
@@ -461,16 +461,33 @@ function applyCmdState(c) {
   out.hidden = !c.tail;
   out.textContent = c.tail || '';
 }
-async function runCmd(box) {
+// 「一時的にスクリプト実行を許可」がオンの間、画面が見えているときに届いた発言のブロックを自動で実行する。
+// 対象は［実行］で確認を出さないブロック（進行役の発言で、保護・禁止ルールの対象外）のうち、削除などの警告がないもの。
+// オンにしたかどうかは保存せず、画面を開き直すとオフに戻る。サーバ側でも同じ条件で確かめる（auto）
+let autoRun = false;
+$('#autoRun').onchange = (e) => {
+  // オンにするときだけ警告を出し、OK を押したら有効にする
+  if (e.target.checked && !confirm(t('⚠ 進行役のコマンドを、内容を確認せずにあなたの権限で実行します。エージェントの権限の外で動くため、エージェントが誤ったコマンドや、読んだ Web ページなどに誘導されたコマンドを書いた場合もそのまま実行されます。\n\n画面が見えている間だけ有効で、画面を開き直すとオフに戻ります。有効にしますか？'))) e.target.checked = false;
+  autoRun = e.target.checked;
+};
+function autoRunCmds(m) {
+  if (!autoRun || document.visibilityState !== 'visible' || m.from !== status.leader) return;
+  for (const box of document.querySelectorAll(`#list .cmd[data-msg="${m.id}"]`)) {
+    const run = box.querySelector('[data-cmd="run"]');
+    if (box.dataset.force === '1' || box.classList.contains('danger') || run.disabled || cmdStates.has(cmdKey(m.id, Number(box.dataset.block)))) continue;
+    runCmd(box, true);
+  }
+}
+async function runCmd(box, auto = false) {
   const id = Number(box.dataset.msg), n = Number(box.dataset.block), from = box.dataset.from;
-  const confirmed = from !== status.leader || box.dataset.force === '1';
+  const confirmed = !auto && (from !== status.leader || box.dataset.force === '1');
   const warn = box.classList.contains('danger') ? t('⚠ 保護しているファイルや削除・本番の更新に触れる可能性があります。') + '\n' : '';
   if (confirmed && !confirm(warn + t('{0} の発言にあるコマンドを、あなたの権限で実行します。内容を確認しましたか？', nameOf(from)))) return;
   const run = box.querySelector('[data-cmd="run"]');
   run.disabled = true; // 二重送信を防ぐ。失敗したら戻す
   const res = await api('POST', `/api/messages/${id}/blocks/${n}/run`, {
     cwd: box.querySelector('.cwd').value.trim(), confirm: confirmed, private: box.querySelector('.private').checked,
-    no_log: box.querySelector('.nolog').checked, timeout_min: Number(box.querySelector('.timeout').value) || 10,
+    no_log: box.querySelector('.nolog').checked, timeout_min: Number(box.querySelector('.timeout').value) || 10, auto,
   });
   if (res === undefined) { run.disabled = false; return; }
   if (res && res.msg_id) applyCmdState(res);
@@ -983,7 +1000,7 @@ function connect() {
     }
     else if (ev.type === 'message') {
       if (partialEls.has(ev.message.from)) showPartial({ agent: ev.message.from }); // 確定した発言に置き換える
-      addMessage(ev.message); notifyMessage(ev.message);
+      addMessage(ev.message); notifyMessage(ev.message); autoRunCmds(ev.message);
     }
     else if (ev.type === 'partial') showPartial(ev.partial);
     else if (ev.type === 'status') renderStatus(ev);

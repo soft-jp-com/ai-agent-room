@@ -208,7 +208,7 @@ sequenceDiagram
 | `capabilities.json` | エージェントごとにできることの宣言。例: `{"claude": {"write": true, "exec": true, "prod": false}}`（`write`＝ファイルの書き込み、`exec`＝コマンドの実行、`prod`＝本番の変更）。書いていない項目は「不明」としてエージェントに伝える |
 | `protected.json` | エージェントに編集させないパスの追加。例: `{"paths": ["D:\\secrets", "~/.aws"]}` |
 
-認証トークンと設定のフォルダは、エージェントに読み書きさせない。Claude Code には起動のたびに禁止ルールを渡す。禁止ルールを渡せない CLI（Codex・agy）の発言や、保護しているパスに触れるコードブロックは、［実行］の前に必ず確認を出す。
+認証トークンと設定のフォルダは、エージェントに読み書きさせない。Claude Code には起動のたびに禁止ルールを渡す。禁止ルールを渡せない CLI（Codex・agy）の発言や、保護しているパスに触れるコードブロックは、［実行］の前に必ず確認を出す。発言一覧の上（「@human 宛て以外を隠す」の横）の「一時的にスクリプト実行を許可」をオンにして警告で OK を押すと、画面が見えている間に届いた進行役のコマンドを［実行］を押さずに実行する。確認を出すものと、削除・本番の更新の警告が出るものは押して実行する。オンにしたことは保存せず、画面を開き直すとオフに戻る。
 
 ## API
 
@@ -238,7 +238,7 @@ sequenceDiagram
 | GET | `/api/logs/{name}/export` | チャットログを Markdown のファイルとして返す |
 | POST | `/api/logs/{name}/branch` | `{"upto": 12}` 過去のチャットログの指定した発言までを引き継いで、新しい会話を始める |
 | GET | `/api/search?q=…&from=…&limit=…` | 過去のチャットログを横断して発言を探す（`from` は発言者で絞り込む。省略可） |
-| POST | `/api/messages/{id}/blocks/{n}/run` | `{"cwd": "", "confirm": false, "private": false, "no_log": false, "timeout_min": 10}` 発言 `id` の `n` 番目（0 始まり）のコードブロックを、人間の権限で実行する（202。各項目は省略可） |
+| POST | `/api/messages/{id}/blocks/{n}/run` | `{"cwd": "", "confirm": false, "private": false, "no_log": false, "timeout_min": 10, "auto": false}` 発言 `id` の `n` 番目（0 始まり）のコードブロックを、人間の権限で実行する（202。各項目は省略可。`auto` が true なら、確認のいらないブロック（進行役の発言で、保護するパスに触れず、禁止ルールを渡せるエージェントのもの）だけを実行し、それ以外は 428 `CONFIRM_REQUIRED`） |
 | POST | `/api/messages/{id}/blocks/{n}/cancel` | 実行中のコードブロックを止める |
 | POST | `/api/config/open` | 設定フォルダ（`rules.md`・`capabilities.json` などを置く場所）をファイルマネージャーで開く |
 | GET | `/api/rules` | 起動時のルール。`{"ja": {...}, "en": {...}}` で、それぞれ `file`（編集するファイル名）・`text`（内容。ファイルがなければ既定のルール）・`custom`（ファイルがあるか）・`in_use`（その言語の投稿で使うファイル名。既定なら `default`）・`legacy`（旧い置き場所のファイルか） |

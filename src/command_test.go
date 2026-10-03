@@ -404,3 +404,48 @@ func TestRunScriptPwshPlainText(t *testing.T) {
 		t.Fatalf("色の制御シーケンスが出た: %q", out.String())
 	}
 }
+
+// denyAdapter は禁止ルールを渡せるエージェント
+type denyAdapter struct{ fakeAdapter }
+
+func (denyAdapter) EnforcesDeny() bool { return true }
+
+// 自動実行は、進行役の発言で、保護するパスに触れず、禁止ルールを渡せるエージェントのブロックだけを受け付ける
+func TestRunBlockAuto(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("cmd で実行するため Windows のみ")
+	}
+	r, a := newTestRoom(t)
+	r.leader = "x"
+	auto := CommandRequest{Auto: true}
+
+	// 禁止ルールを渡せないエージェントの発言は、進行役でも自動では実行しない
+	m := postChat(r, "x", "```cmd\necho 1\n```")
+	if _, err := r.RunBlock(m.ID, 0, auto); !errors.Is(err, ErrCommandConfirm) {
+		t.Fatalf("禁止ルールを渡せないエージェントのブロックを自動で実行した: %v", err)
+	}
+	a.Adapter = denyAdapter{}
+	// 保護するパスに触れるブロックは自動では実行しない
+	m = postChat(r, "x", "```cmd\ntype .claude/settings.json\n```")
+	if _, err := r.RunBlock(m.ID, 0, auto); !errors.Is(err, ErrCommandConfirm) {
+		t.Fatalf("保護するパスに触れるブロックを自動で実行した: %v", err)
+	}
+	// 進行役以外の発言は、確認の印があっても自動では実行しない
+	r.leader = ""
+	m = postChat(r, "x", "```cmd\necho 1\n```")
+	if _, err := r.RunBlock(m.ID, 0, CommandRequest{Auto: true, Confirm: true}); !errors.Is(err, ErrCommandConfirm) {
+		t.Fatalf("進行役以外のブロックを自動で実行した: %v", err)
+	}
+	// 条件を満たせば実行し、開始の発言に自動で実行したことを残す
+	r.leader = "x"
+	if _, err := r.RunBlock(m.ID, 0, auto); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	start := r.messages[len(r.messages)-1]
+	r.mu.Unlock()
+	if !strings.Contains(start.Text, "自動で実行し始めました") {
+		t.Fatalf("開始の発言 %q", start.Text)
+	}
+	waitCommand(t, r, m.ID, 0)
+}

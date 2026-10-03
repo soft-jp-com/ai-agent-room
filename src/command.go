@@ -70,6 +70,9 @@ type CommandRequest struct {
 	Private    bool   `json:"private"`     // 結果（出力）をチャットに出さない
 	NoLog      bool   `json:"no_log"`      // 出力の全文ログを残さない
 	TimeoutMin int    `json:"timeout_min"` // 時間制限（分）。0 なら既定の10分
+	// Auto は、画面を見ている間に人間がボタンを押さずに実行したこと。確認のいらないブロック
+	// （進行役の発言で、保護するパスに触れず、禁止ルールを渡せるエージェントのもの）だけを受け付ける
+	Auto bool `json:"auto"`
 }
 
 func commandKey(msgID, block int) string { return fmt.Sprintf("%d:%d", msgID, block) }
@@ -124,6 +127,12 @@ func (r *Room) RunBlock(msgID, block int, req CommandRequest) (CommandRun, error
 			return CommandRun{}, ErrCommandConfirm
 		}
 	}
+	if req.Auto {
+		a := r.agent(msg.From)
+		if msg.From != r.leader || msg.Blocks[block].Protected || a == nil || !enforcesDeny(a) {
+			return CommandRun{}, ErrCommandConfirm
+		}
+	}
 	cwd := r.workdir
 	if strings.TrimSpace(req.Cwd) != "" {
 		var err error
@@ -142,10 +151,14 @@ func (r *Room) RunBlock(msgID, block int, req CommandRequest) (CommandRun, error
 	r.cmdRunning[key] = run
 	logPath := r.commandLogPathLocked(run, req.NoLog)
 	r.log.Info("command.start", "msg_id", msgID, "block", block, "shell", shell, "cwd", cwd,
-		"from", msg.From, "private", req.Private, "log", logPath != "", "timeout_sec", int(timeout/time.Second))
+		"from", msg.From, "private", req.Private, "log", logPath != "", "timeout_sec", int(timeout/time.Second), "auto", req.Auto)
 	// 実行開始をチャットログにも残す（案13）。Kind が system なので、エージェントのターンのきっかけにはしない
+	how := ""
+	if req.Auto {
+		how = "自動で"
+	}
 	start := r.appendMessageLocked(Message{From: "system", Kind: "system", ReplyTo: msgID,
-		Text: fmt.Sprintf("▶ #%d のブロック %d を %s で実行し始めました（作業フォルダ: %s、時間制限: %d分）", msgID, block+1, shell, cwd, int(timeout/time.Minute))})
+		Text: fmt.Sprintf("▶ #%d のブロック %d を %s で%s実行し始めました（作業フォルダ: %s、時間制限: %d分）", msgID, block+1, shell, how, cwd, int(timeout/time.Minute))})
 	run.startID = start.ID
 	r.pushCommandLocked(run)
 	go r.execCommand(ctx, run, msg.Blocks[block].Code, logPath)
