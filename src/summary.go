@@ -115,23 +115,42 @@ func (r *Room) SummarizeAndReset() error {
 	gen, workdir, modelSel := r.gen, r.workdir, a.modelSel
 	r.postLocked("system", fmt.Sprintf("%s が会話の要約を作成しています。完了すると新しい会話を始めます。", a.Name), "system")
 	r.log.Info("conversation.summarize.start", "agent", a.ID, "log_file", oldLog, "messages", len(r.messages), "mode", mode)
-	go r.finishSummary(a, prompt, oldLog, gen, workdir, modelSel)
+	ctx, cancel := context.WithCancel(context.Background())
+	r.summaryCancel = cancel
+	ctx = withPermission(ctx, a.permission)
+	ctx = withTurnTimeout(ctx, r.turnTimeoutForLocked(a))
+	go r.finishSummary(ctx, cancel, a, prompt, oldLog, gen, len(r.messages), workdir, modelSel)
 	return nil
 }
 
-func (r *Room) finishSummary(a *Agent, prompt, oldLog string, gen int, workdir, modelSel string) {
+func (r *Room) finishSummary(ctx context.Context, cancel context.CancelFunc, a *Agent, prompt, oldLog string, gen, upto int, workdir, modelSel string) {
+	defer cancel()
 	start := time.Now()
 	// 要約は既存の会話を引き継がず、新しいセッションで作る
-	res, err := a.Adapter.Run(context.Background(), prompt, "", modelSel, workdir)
+	res, err := a.Adapter.Run(ctx, prompt, "", modelSel, workdir)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.summarizing = false
+	r.summaryCancel = nil
 	a.usage.add(res.Usage)
 	r.saveUsageLocked()
 	log := r.log.With("agent", a.ID, "log_file", oldLog, "latency_ms", time.Since(start).Milliseconds())
 	if gen != r.gen { // 要約中に「新しい会話」などで会話が変わった
 		log.Info("conversation.summarize.end", "discarded", "reset")
+		return
+	}
+	if ctx.Err() != nil {
+		log.Info("conversation.summarize.end", "discarded", "canceled")
+		r.pushStatusLocked()
+		return
+	}
+	// 要約開始後に届いた発言はプロンプトに含まれていない。会話をリセットすると
+	// 追加依頼やコマンド結果が失われるので、現在の会話を維持する。
+	if len(r.messages) != upto {
+		log.Info("conversation.summarize.end", "discarded", "new_messages")
+		r.postLocked("system", "要約中に新しい発言が届いたため、会話の切り替えを取り消しました。追加の発言はそのまま残っています。", "system")
+		r.pushStatusLocked()
 		return
 	}
 	summary := strings.TrimSpace(cleanReply(a, res.Text))

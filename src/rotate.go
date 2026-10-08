@@ -77,7 +77,9 @@ func (r *Room) checkRotateLocked() {
 	r.log.Info("session.rotate.start", "agents", strings.Join(ids, ","), "summarizer", s.ID, "threshold", r.rotateTokens, "mode", mode)
 	r.postLocked("system", fmt.Sprintf("直近の入力がしきい値（%d トークン）を超えたため、%s の CLI セッションを切り替えます。%s が議事録を作成しています。",
 		r.rotateTokens, strings.Join(names, "、"), s.Name), "system")
-	go r.writeMinutes(job, s, prompt, r.gen, r.workdir, s.modelSel, filepath.Base(r.logFile))
+	ctx := withPermission(context.Background(), s.permission)
+	ctx = withTurnTimeout(ctx, r.turnTimeoutForLocked(s))
+	go r.writeMinutes(ctx, job, s, prompt, r.gen, r.workdir, s.modelSel, filepath.Base(r.logFile))
 }
 
 // needsRotateLocked はセッションを切り替えるべきかを判定する。直近1回の入力トークンがしきい値を超えたら切り替える。
@@ -90,9 +92,9 @@ func (r *Room) needsRotateLocked(a *Agent) bool {
 }
 
 // writeMinutes は議事録を作成して logs/minutes/ に保存する。失敗したら予約を取り消して通知する
-func (r *Room) writeMinutes(job *minutesJob, s *Agent, prompt string, gen int, workdir, modelSel, logName string) {
+func (r *Room) writeMinutes(ctx context.Context, job *minutesJob, s *Agent, prompt string, gen int, workdir, modelSel, logName string) {
 	start := time.Now()
-	res, err := s.Adapter.Run(context.Background(), prompt, "", modelSel, workdir) // 議事録は新しいセッションで作る
+	res, err := s.Adapter.Run(ctx, prompt, "", modelSel, workdir) // 議事録は新しいセッションで作る
 	text := strings.TrimSpace(cleanReply(s, res.Text))
 	if err == nil && text == "" {
 		err = errors.New("議事録が空でした")

@@ -82,6 +82,9 @@ func (c *fileContentCache) remember(workdir string, snap fileSnapshot) map[strin
 // isSecretFile は秘密情報を含みそうなファイルか。中身を logs/diffs/ に写さないよう、差分の対象から外す
 func isSecretFile(rel string) bool {
 	name := strings.ToLower(filepath.Base(filepath.FromSlash(rel)))
+	if name == ".env" || strings.HasPrefix(name, ".env.") {
+		return true
+	}
 	switch filepath.Ext(name) {
 	case ".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".jks", ".keystore", ".ppk":
 		return true

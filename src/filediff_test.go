@@ -124,3 +124,41 @@ func TestPruneFileDiffs(t *testing.T) {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// dotenv の変更前後の値をキャッシュにも差分ログにも残さない。
+func TestDotenvExcludedFromDiffs(t *testing.T) {
+	for _, name := range []string{".env", ".env.local", ".env.production", ".ENV.DEVELOPMENT"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, name)
+			write := func(body string) {
+				t.Helper()
+				if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write("API_KEY=dummy-before-value\n")
+			cache := &fileContentCache{}
+			before := takeFileSnapshot(dir)
+			beforeData := cache.remember(dir, before)
+			write("API_KEY=dummy-after-longer-value\n")
+			after := takeFileSnapshot(dir)
+			afterData := cache.remember(dir, after)
+			if _, ok := beforeData[name]; ok {
+				t.Fatal("dotenv contents cached before turn")
+			}
+			if _, ok := afterData[name]; ok {
+				t.Fatal("dotenv contents cached after turn")
+			}
+			changes := diffFileSnapshots(dir, before, after)
+			if len(changes) != 1 {
+				t.Fatalf("expected changed file metadata: %+v", changes)
+			}
+			diffs := buildFileDiffs(changes, beforeData, afterData)
+			logPath, err := writeFileDiffs(t.TempDir(), "x", time.Now(), changes, diffs)
+			if err != nil || logPath != "" {
+				t.Fatalf("dotenv diff written: path=%q err=%v", logPath, err)
+			}
+		})
+	}
+}

@@ -189,12 +189,13 @@ type Room struct {
 	cancel            context.CancelFunc // 実行中のターンまたは待機を中止する
 	nextID            int
 	turnSeq           int
-	gen               int           // Reset のたびに増える。古い会話のターン結果を捨てるために使う
-	summarizing       bool          // 「要約して新しい会話」の要約を作成中
-	rotateTokens      int           // CLI セッションを切り替えるしきい値（直近1回の入力トークン。0 なら切り替えない）
-	turnTimeout       time.Duration // 1ターンの上限時間（エージェントごとの設定がなければこれを使う）
-	minutes           *minutesJob   // 作成中の議事録（なければ nil）
-	lastMinutes       *minutesJob   // 直近に作成できた議事録
+	gen               int                // Reset のたびに増える。古い会話のターン結果を捨てるために使う
+	summarizing       bool               // 「要約して新しい会話」の要約を作成中
+	summaryCancel     context.CancelFunc // 要約だけを停止する（通常のターンの cancel と分ける）
+	rotateTokens      int                // CLI セッションを切り替えるしきい値（直近1回の入力トークン。0 なら切り替えない）
+	turnTimeout       time.Duration      // 1ターンの上限時間（エージェントごとの設定がなければこれを使う）
+	minutes           *minutesJob        // 作成中の議事録（なければ nil）
+	lastMinutes       *minutesJob        // 直近に作成できた議事録
 	liveMu            sync.Mutex
 	live              map[string]*liveLog // エージェントごとの CLI 出力（別窓表示用。r.mu ではなく liveMu で守る）
 	workdir           string
@@ -548,6 +549,9 @@ func (r *Room) Stop() {
 }
 
 func (r *Room) stopLocked() {
+	if r.summaryCancel != nil {
+		r.summaryCancel()
+	}
 	r.queue = nil
 	if r.disc != nil {
 		r.log.Info("discussion.end", "reason", "stopped", "round", r.disc.Round)
